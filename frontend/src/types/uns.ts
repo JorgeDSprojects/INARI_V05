@@ -128,3 +128,10 @@ export interface DataBranch {
   qos: number;
   connected_at: string | null;
 }
+
+export interface SyncStatus {
+  synced: boolean;
+  last_published_at: string | null;
+  last_updated_at: string;
+  diff_note: string | null;
+}

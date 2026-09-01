@@ -1,5 +1,5 @@
 import axios from "axios";
-import type { Asset, Area, Broker, BrokerStatus, BrokerTestResult, Cell, DataBranch, Enterprise, EnterpriseTree, Line, NodeType, Site, ValidationResult } from "../types/uns";
+import type { Asset, Area, Broker, BrokerStatus, BrokerTestResult, Cell, DataBranch, Enterprise, EnterpriseTree, Line, NodeType, Site, SyncStatus, ValidationResult } from "../types/uns";
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -91,5 +91,9 @@ export const api = {
   branches: {
     list: (cellId: string, assetId: string) =>
       http.get<DataBranch[]>(`/cells/${cellId}/assets/${assetId}/branches`).then((r) => r.data),
+  },
+  syncStatus: {
+    get: (cellId: string, assetId: string) =>
+      http.get<SyncStatus>(`/cells/${cellId}/assets/${assetId}/sync-status`).then((r) => r.data),
   },
 };

@@ -109,6 +109,35 @@ async def publish_asset(cell_id: str, asset_id: str, db: AsyncSession = Depends(
     return obj
 
 
+@router.get("/{asset_id}/sync-status")
+async def get_sync_status(cell_id: str, asset_id: str, db: AsyncSession = Depends(get_db)):
+    obj = await db.get(Asset, asset_id)
+    if not obj or obj.cell_id != cell_id:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    if obj.last_published_at is None:
+        return {
+            "synced": False,
+            "last_published_at": None,
+            "last_updated_at": obj.updated_at.isoformat(),
+            "diff_note": "Asset has never been published to EMQX",
+        }
+
+    # Compare publish time vs last DB update
+    pub = obj.last_published_at.replace(tzinfo=timezone.utc) if obj.last_published_at.tzinfo is None else obj.last_published_at
+    upd = obj.updated_at.replace(tzinfo=timezone.utc) if obj.updated_at.tzinfo is None else obj.updated_at
+
+    synced = pub >= upd
+    diff_note = None if synced else f"Payload updated {upd.isoformat()} after last publish {pub.isoformat()}"
+
+    return {
+        "synced": synced,
+        "last_published_at": pub.isoformat(),
+        "last_updated_at": upd.isoformat(),
+        "diff_note": diff_note,
+    }
+
+
 @router.get("/{asset_id}/branches", response_model=list[dict])
 async def get_asset_branches(cell_id: str, asset_id: str, db: AsyncSession = Depends(get_db)):
     obj = await db.get(Asset, asset_id)

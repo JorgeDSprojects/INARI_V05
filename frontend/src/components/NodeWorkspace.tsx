@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { api } from "../api/client";
-import type { DataBranch, EnterpriseTree, SelectedNode, Asset } from "../types/uns";
+import type { DataBranch, EnterpriseTree, SelectedNode, Asset, SyncStatus } from "../types/uns";
 import { JsonEditorPanel } from "./JsonEditorPanel";
 
 interface Props {
@@ -22,15 +22,25 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
   const [branches, setBranches] = useState<DataBranch[]>([]);
   const [branchesLoading, setBranchesLoading] = useState(false);
   const [branchesError, setBranchesError] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   useEffect(() => {
     if (selected?.level === "asset" && selected.parentIds.cell_id) {
       api.assets.list(selected.parentIds.cell_id).then(list => {
         const found = list.find(a => a.id === selected.id);
-        if (found) { setAsset(found); setPayload(found.descriptive_payload ?? {}); }
+        if (found) {
+          setAsset(found);
+          setPayload(found.descriptive_payload ?? {});
+          // Load sync status
+          api.syncStatus.get(selected.parentIds.cell_id, found.id)
+            .then(setSyncStatus)
+            .catch(() => setSyncStatus(null));
+        }
       });
     } else {
       setAsset(null);
+      setSyncStatus(null);
     }
   }, [selected]);
 
@@ -105,9 +115,12 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
             <div className="flex items-center gap-2">
               <h2 className="text-xl font-semibold text-ink">{nodeName}</h2>
               <span className="px-2 py-0.5 rounded bg-surface-muted text-ink-secondary text-[10px] font-medium tracking-wider">{nodeType}</span>
-              {asset && (
-                <span className="flex items-center gap-1 px-2 py-0.5 rounded bg-success-soft text-success text-[10px] font-medium">
-                  <span className="w-1.5 h-1.5 rounded-full bg-success inline-block" />SYNCED
+              {asset && syncStatus && (
+                <span className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium ${
+                  syncStatus.synced ? "bg-success-soft text-success" : "bg-danger-soft text-danger"
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full inline-block ${syncStatus.synced ? "bg-success" : "bg-danger"}`} />
+                  {syncStatus.synced ? "SYNCED" : "UNSYNCED"}
                 </span>
               )}
             </div>
@@ -128,6 +141,43 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
             )}
           </div>
         </div>
+
+        {/* Unsynced banner */}
+        {asset && syncStatus && !syncStatus.synced && (
+          <div className="px-6 py-3 bg-danger/10 border-b border-danger/20 flex items-start justify-between gap-4">
+            <div className="flex items-start gap-2">
+              <span className="text-danger text-sm mt-0.5">⚠</span>
+              <div>
+                <p className="text-danger text-sm font-medium">Out of sync with EMQX</p>
+                <p className="text-danger/70 text-xs mt-0.5">{syncStatus.diff_note}</p>
+                {syncError && <p className="text-danger text-xs mt-1">{syncError}</p>}
+              </div>
+            </div>
+            <button
+              onClick={async () => {
+                if (!selected?.parentIds.cell_id || !asset) return;
+                setSaving(true);
+                setSyncError(null);
+                try {
+                  await api.assets.update(selected.parentIds.cell_id, asset.id, { descriptive_payload: payload });
+                  await api.assets.publish(selected.parentIds.cell_id, asset.id);
+                  const s = await api.syncStatus.get(selected.parentIds.cell_id, asset.id);
+                  setSyncStatus(s);
+                  setPublished(true);
+                  setTimeout(() => setPublished(false), 3000);
+                } catch {
+                  setSyncError("Re-sync failed. Please try again.");
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              disabled={saving}
+              className="px-3 py-1.5 text-xs bg-danger text-white rounded shrink-0 disabled:opacity-50"
+            >
+              Re-sync
+            </button>
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="flex items-center gap-0">
