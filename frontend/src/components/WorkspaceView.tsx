@@ -7,9 +7,10 @@ interface Props {
   selected: SelectedNode | null;
   onSelect: (node: SelectedNode) => void;
   onRefresh: () => void;
+  onDelete: () => void;
 }
 
-export function WorkspaceView({ enterprise, selected, onSelect, onRefresh }: Props) {
+export function WorkspaceView({ enterprise, selected, onSelect, onRefresh, onDelete }: Props) {
   return (
     <div className="flex flex-1 overflow-hidden">
       <TreePanel
@@ -22,6 +23,7 @@ export function WorkspaceView({ enterprise, selected, onSelect, onRefresh }: Pro
         enterprise={enterprise}
         selected={selected}
         onRefresh={onRefresh}
+        onDelete={onDelete}
       />
     </div>
   );

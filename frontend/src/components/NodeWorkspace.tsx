@@ -7,11 +7,12 @@ interface Props {
   enterprise: EnterpriseTree;
   selected: SelectedNode | null;
   onRefresh: () => void;
+  onDelete: () => void;
 }
 
 type Tab = "definition" | "_descriptive" | "_informative" | "branches" | "_operational" | "_analytical";
 
-export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
+export function NodeWorkspace({ enterprise, selected, onRefresh, onDelete }: Props) {
   const [tab, setTab] = useState<Tab>("_descriptive");
   const [asset, setAsset] = useState<Asset | null>(null);
   const [payload, setPayload] = useState<Record<string, unknown>>({});
@@ -31,6 +32,8 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
   const [descValue, setDescValue] = useState("");
   const [nameSaving, setNameSaving] = useState(false);
   const [nameSaved, setNameSaved] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     // Reset all payload state on node change
@@ -42,6 +45,7 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
     setSyncStatus(null);
     setSyncError(null);
     setBranches([]);
+    setDeleteConfirm(false);
 
     if (!selected) return;
 
@@ -93,6 +97,22 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
   const nodeName = getNodeName(enterprise, selected);
   const nodePath = getNodePath(enterprise, selected);
   const nodeType = selected.level.toUpperCase();
+
+  const handleDelete = async () => {
+    if (!selected) return;
+    setDeleting(true);
+    try {
+      switch (selected.level) {
+        case "enterprise": await api.enterprises.delete(selected.id); break;
+        case "site": await api.sites.delete(selected.parentIds.enterprise_id, selected.id); break;
+        case "area": await api.areas.delete(selected.parentIds.site_id, selected.id); break;
+        case "line": await api.lines.delete(selected.parentIds.area_id, selected.id); break;
+        case "cell": await api.cells.delete(selected.parentIds.line_id, selected.id); break;
+        case "asset": await api.assets.delete(selected.parentIds.cell_id, selected.id); break;
+      }
+      onDelete();
+    } finally { setDeleting(false); }
+  };
 
   const handleSaveName = async () => {
     if (!selected || !nameValue.trim()) return;
@@ -424,6 +444,44 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
                   <span className="text-xs text-warning">
                     ⚠ Changing the name alters the MQTT topic — republish to update the broker
                   </span>
+                )}
+              </div>
+
+              {/* Delete zone */}
+              <div className="pt-4 border-t border-border-subtle">
+                {!deleteConfirm ? (
+                  <button
+                    onClick={() => setDeleteConfirm(true)}
+                    className="px-4 py-2 text-sm text-danger border border-danger/40 rounded hover:bg-danger/10"
+                  >
+                    Delete {nodeType.toLowerCase()}
+                  </button>
+                ) : (
+                  <div className="p-4 rounded border border-danger/40 bg-danger/5 space-y-3">
+                    <p className="text-sm text-danger font-medium">
+                      Delete «{nodeName}»?
+                    </p>
+                    <p className="text-xs text-ink-muted">
+                      This removes the node and all its children from the database.
+                      Retained MQTT messages are NOT automatically cleared from the broker.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleDelete}
+                        disabled={deleting}
+                        className="px-4 py-1.5 text-sm bg-danger text-white rounded disabled:opacity-50"
+                      >
+                        {deleting ? "Deleting…" : "Yes, delete"}
+                      </button>
+                      <button
+                        onClick={() => setDeleteConfirm(false)}
+                        disabled={deleting}
+                        className="px-4 py-1.5 text-sm border border-border rounded text-ink hover:bg-surface-subtle"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>

@@ -55,6 +55,7 @@ export default function App() {
           selected={selected}
           onSelect={setSelected}
           onRefresh={refresh}
+          onDelete={() => { setSelected(null); refresh(); }}
         />
       ) : view === "brokers" ? (
         <BrokersView />
