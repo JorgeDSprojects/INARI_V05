@@ -8,6 +8,12 @@ const http = axios.create({ baseURL: BASE });
 export const api = {
   tree: {
     get: () => http.get<EnterpriseTree[]>("/tree/").then((r) => r.data),
+    copy: (body: { source_id: string; source_level: string; target_parent_id: string }) =>
+      http.post<{ new_root_id: string; node_count: number }>("/tree/copy", body).then((r) => r.data),
+    move: (body: { source_id: string; source_level: string; target_parent_id: string }) =>
+      http.post<{ moved_root_id: string; node_count: number }>("/tree/move", body).then((r) => r.data),
+    publishSubtree: (body: { root_id: string; root_level: string }) =>
+      http.post<{ published: number; failed: number }>("/tree/publish-subtree", body).then((r) => r.data),
   },
   enterprises: {
     list: () => http.get<Enterprise[]>("/enterprises/").then((r) => r.data),

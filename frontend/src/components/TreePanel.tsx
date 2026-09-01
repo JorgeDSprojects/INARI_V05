@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api } from "../api/client";
 import type { EnterpriseTree, SelectedNode, HierarchyLevel } from "../types/uns";
 import { CreateWithDescriptiveModal } from "./CreateWithDescriptiveModal";
+import { CopyMoveModal } from "./CopyMoveModal";
 
 interface Props {
   enterprise: EnterpriseTree;
@@ -20,9 +21,10 @@ interface RowProps {
   status?: "synced" | "idle";
   onClick: () => void;
   onAdd?: () => void;
+  onCopy?: () => void;
 }
 
-function TreeRow({ label, level, indent, selected, hasChildren, status = "idle", onClick, onAdd }: RowProps) {
+function TreeRow({ label, level, indent, selected, hasChildren, status = "idle", onClick, onAdd, onCopy }: RowProps) {
   const [open, setOpen] = useState(true);
   const [hovered, setHovered] = useState(false);
 
@@ -70,6 +72,13 @@ function TreeRow({ label, level, indent, selected, hasChildren, status = "idle",
             title="Add child"
           >+</button>
         )}
+        {onCopy && (hovered || selected) && (
+          <button
+            onClick={e => { e.stopPropagation(); onCopy(); }}
+            className="w-5 h-5 flex items-center justify-center text-ink-muted hover:text-ink rounded text-xs shrink-0"
+            title="Copy/Move"
+          >⧉</button>
+        )}
       </div>
       {open && hasChildren && <div>{/* children rendered by parent */}</div>}
     </div>
@@ -90,6 +99,7 @@ export function TreePanel({ enterprise, selected, onSelect, onRefresh }: Props) 
   const [addingChild, setAddingChild] = useState<{ level: HierarchyLevel; parentId: string } | null>(null);
   const [newName, setNewName] = useState("");
   const [assetModalCellId, setAssetModalCellId] = useState<string | null>(null);
+  const [copyMoveNode, setCopyMoveNode] = useState<{ id: string; level: HierarchyLevel; name: string } | null>(null);
 
   const createChild = async () => {
     if (!addingChild || !newName.trim()) return;
@@ -169,6 +179,7 @@ export function TreePanel({ enterprise, selected, onSelect, onRefresh }: Props) 
                 selected={selected?.level === "site" && selected.id === site.id}
                 onClick={() => onSelect({ level: "site", id: site.id, parentIds: { enterprise_id: enterprise.id } })}
                 onAdd={() => setAddingChild({ level: "site", parentId: site.id })}
+                onCopy={() => setCopyMoveNode({ id: site.id, level: "site", name: site.name })}
               />
               {site.areas.map(area => (
                 <div key={area.id}>
@@ -178,6 +189,7 @@ export function TreePanel({ enterprise, selected, onSelect, onRefresh }: Props) 
                     selected={selected?.level === "area" && selected.id === area.id}
                     onClick={() => onSelect({ level: "area", id: area.id, parentIds: { site_id: site.id } })}
                     onAdd={() => setAddingChild({ level: "area", parentId: area.id })}
+                    onCopy={() => setCopyMoveNode({ id: area.id, level: "area", name: area.name })}
                   />
                   {area.lines.map(line => (
                     <div key={line.id}>
@@ -187,6 +199,7 @@ export function TreePanel({ enterprise, selected, onSelect, onRefresh }: Props) 
                         selected={selected?.level === "line" && selected.id === line.id}
                         onClick={() => onSelect({ level: "line", id: line.id, parentIds: { area_id: area.id } })}
                         onAdd={() => setAddingChild({ level: "line", parentId: line.id })}
+                        onCopy={() => setCopyMoveNode({ id: line.id, level: "line", name: line.name })}
                       />
                       {line.cells.map(cell => (
                         <div key={cell.id}>
@@ -196,6 +209,7 @@ export function TreePanel({ enterprise, selected, onSelect, onRefresh }: Props) 
                             selected={selected?.level === "cell" && selected.id === cell.id}
                             onClick={() => onSelect({ level: "cell", id: cell.id, parentIds: { line_id: line.id } })}
                             onAdd={() => setAssetModalCellId(cell.id)}
+                            onCopy={() => setCopyMoveNode({ id: cell.id, level: "cell", name: cell.name })}
                           />
                           {cell.assets.map(asset => (
                             <TreeRow
@@ -228,6 +242,16 @@ export function TreePanel({ enterprise, selected, onSelect, onRefresh }: Props) 
           cellId={assetModalCellId}
           onClose={() => setAssetModalCellId(null)}
           onCreated={() => { setAssetModalCellId(null); onRefresh(); }}
+        />
+      )}
+      {copyMoveNode && (
+        <CopyMoveModal
+          sourceId={copyMoveNode.id}
+          sourceLevel={copyMoveNode.level}
+          sourceName={copyMoveNode.name}
+          enterprise={enterprise}
+          onClose={() => setCopyMoveNode(null)}
+          onDone={() => { setCopyMoveNode(null); onRefresh(); }}
         />
       )}
     </aside>
