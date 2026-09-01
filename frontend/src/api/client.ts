@@ -1,5 +1,5 @@
 import axios from "axios";
-import type { Asset, Area, Cell, Enterprise, EnterpriseTree, Line, Site } from "../types/uns";
+import type { Asset, Area, Broker, BrokerStatus, BrokerTestResult, Cell, Enterprise, EnterpriseTree, Line, Site } from "../types/uns";
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -61,5 +61,15 @@ export const api = {
     delete: (cellId: string, assetId: string) => http.delete(`/cells/${cellId}/assets/${assetId}`),
     publish: (cellId: string, assetId: string) =>
       http.post<Asset>(`/cells/${cellId}/assets/${assetId}/publish`).then((r) => r.data),
+  },
+  brokers: {
+    list: () => http.get<Broker[]>("/brokers/").then((r) => r.data),
+    create: (body: { label: string; host: string; port: number; api_port: number; username?: string; password?: string; use_tls?: boolean }) =>
+      http.post<Broker>("/brokers/", body).then((r) => r.data),
+    update: (id: string, body: Partial<{ label: string; host: string; port: number; api_port: number; username: string; password: string; use_tls: boolean }>) =>
+      http.put<Broker>(`/brokers/${id}`, body).then((r) => r.data),
+    delete: (id: string) => http.delete(`/brokers/${id}`),
+    status: (id: string) => http.get<BrokerStatus>(`/brokers/${id}/status`).then((r) => r.data),
+    test: (id: string) => http.post<BrokerTestResult>(`/brokers/${id}/test`).then((r) => r.data),
   },
 };

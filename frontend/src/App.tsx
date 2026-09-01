@@ -4,6 +4,7 @@ import type { EnterpriseTree, SelectedNode } from "./types/uns";
 import { AppHeader } from "./components/AppHeader";
 import { CatalogView } from "./components/CatalogView";
 import { WorkspaceView } from "./components/WorkspaceView";
+import { BrokersView } from "./components/BrokersView";
 
 export type AppView = "catalog" | "workspace" | "brokers" | "nodetypes";
 
@@ -54,6 +55,8 @@ export default function App() {
           onSelect={setSelected}
           onRefresh={refresh}
         />
+      ) : view === "brokers" ? (
+        <BrokersView />
       ) : (
         <div className="flex-1 flex items-center justify-center text-ink-muted text-sm">
           Coming soon

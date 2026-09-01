@@ -80,3 +80,28 @@ export interface SelectedNode {
   id: string;
   parentIds: Record<string, string>;
 }
+
+export interface Broker {
+  id: string;
+  label: string;
+  host: string;
+  port: number;
+  api_port: number;
+  username: string | null;
+  use_tls: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BrokerStatus {
+  connected: boolean;
+  version: string | null;
+  node: string | null;
+  error: string | null;
+}
+
+export interface BrokerTestResult {
+  ok: boolean;
+  latency_ms: number | null;
+  error: string | null;
+}
