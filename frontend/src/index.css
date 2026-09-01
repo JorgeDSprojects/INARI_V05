@@ -1,0 +1,30 @@
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --surface: #FFFFFF;
+  --surface-subtle: #F7F8FA;
+  --surface-muted: #EEF1F4;
+  --ink: #171A1D;
+  --ink-secondary: #5E6872;
+  --ink-muted: #87919B;
+  --border: #DDE2E7;
+  --border-subtle: #EDF0F3;
+  --accent: #198ACB;
+  --accent-soft: #E8F5FC;
+  --success: #17865D;
+  --success-soft: #E7F5EF;
+  --warning: #A9630B;
+  --warning-soft: #FFF3DC;
+  --danger: #C43F3F;
+  --danger-soft: #FCEBEC;
+  --code-bg: #111820;
+  --code-ink: #DCE8F2;
+  --code-muted: #687786;
+}
+
+* { font-family: 'Geist', sans-serif; box-sizing: border-box; }
+body { margin: 0; background: var(--surface-subtle); color: var(--ink); }
