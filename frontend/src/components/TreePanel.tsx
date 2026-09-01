@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "../api/client";
 import type { EnterpriseTree, SelectedNode, HierarchyLevel } from "../types/uns";
+import { CreateWithDescriptiveModal } from "./CreateWithDescriptiveModal";
 
 interface Props {
   enterprise: EnterpriseTree;
@@ -88,6 +89,7 @@ export function TreePanel({ enterprise, selected, onSelect, onRefresh }: Props) 
   const [search, setSearch] = useState("");
   const [addingChild, setAddingChild] = useState<{ level: HierarchyLevel; parentId: string } | null>(null);
   const [newName, setNewName] = useState("");
+  const [assetModalCellId, setAssetModalCellId] = useState<string | null>(null);
 
   const createChild = async () => {
     if (!addingChild || !newName.trim()) return;
@@ -97,7 +99,7 @@ export function TreePanel({ enterprise, selected, onSelect, onRefresh }: Props) 
     else if (level === "site") await api.areas.create(parentId, body);
     else if (level === "area") await api.lines.create(parentId, body);
     else if (level === "line") await api.cells.create(parentId, body);
-    else if (level === "cell") await api.assets.create(parentId, { ...body, descriptive_payload: {} });
+    // "cell" level handled by CreateWithDescriptiveModal
     setAddingChild(null);
     setNewName("");
     onRefresh();
@@ -193,7 +195,7 @@ export function TreePanel({ enterprise, selected, onSelect, onRefresh }: Props) 
                             hasChildren={cell.assets.length > 0}
                             selected={selected?.level === "cell" && selected.id === cell.id}
                             onClick={() => onSelect({ level: "cell", id: cell.id, parentIds: { line_id: line.id } })}
-                            onAdd={() => setAddingChild({ level: "cell", parentId: cell.id })}
+                            onAdd={() => setAssetModalCellId(cell.id)}
                           />
                           {cell.assets.map(asset => (
                             <TreeRow
@@ -220,6 +222,14 @@ export function TreePanel({ enterprise, selected, onSelect, onRefresh }: Props) 
         <span className="w-1.5 h-1.5 rounded-full bg-success inline-block" />
         <span>{enterprise.sites.length} sites · {enterprise.sites.reduce((a, s) => a + s.areas.reduce((b, ar) => b + ar.lines.reduce((c, l) => c + l.cells.reduce((d, ce) => d + ce.assets.length, 0), 0), 0), 0)} assets</span>
       </div>
+
+      {assetModalCellId && (
+        <CreateWithDescriptiveModal
+          cellId={assetModalCellId}
+          onClose={() => setAssetModalCellId(null)}
+          onCreated={() => { setAssetModalCellId(null); onRefresh(); }}
+        />
+      )}
     </aside>
   );
 }
