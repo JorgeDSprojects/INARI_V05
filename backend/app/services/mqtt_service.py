@@ -32,6 +32,16 @@ def publish_descriptive(topic: str, payload: dict[str, Any]) -> None:
         logger.info("Published _descriptive to %s", topic)
 
 
+def clear_retained(topic: str) -> None:
+    """Clear a retained MQTT message by publishing an empty payload to the same topic."""
+    client = get_mqtt_client()
+    result = client.publish(topic, payload=None, qos=1, retain=True)
+    if result.rc != mqtt.MQTT_ERR_SUCCESS:
+        logger.error("MQTT clear_retained failed rc=%s topic=%s", result.rc, topic)
+    else:
+        logger.info("Cleared retained %s", topic)
+
+
 def disconnect_mqtt() -> None:
     global _client
     if _client:

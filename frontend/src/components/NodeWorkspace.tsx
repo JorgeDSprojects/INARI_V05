@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { api } from "../api/client";
 import type { DataBranch, EnterpriseTree, SelectedNode, Asset, SyncStatus } from "../types/uns";
+import { LEVEL_COLORS } from "./TreePanel";
 import { JsonEditorPanel } from "./JsonEditorPanel";
 
 interface Props {
@@ -95,7 +96,7 @@ export function NodeWorkspace({ enterprise, selected, onRefresh, onDelete }: Pro
   }
 
   const nodeName = getNodeName(enterprise, selected);
-  const nodePath = getNodePath(enterprise, selected);
+
   const nodeType = selected.level.toUpperCase();
 
   const handleDelete = async () => {
@@ -213,10 +214,11 @@ export function NodeWorkspace({ enterprise, selected, onRefresh, onDelete }: Pro
       <div className="px-6 pt-4 pb-0 border-b border-border">
         <div className="flex items-start justify-between pb-4">
           <div>
-            <div className="text-xs text-ink-muted font-mono mb-1">{nodePath}</div>
-            <div className="flex items-center gap-2">
+            {/* Breadcrumb with level labels */}
+            <LevelBreadcrumb enterprise={enterprise} selected={selected} />
+            <div className="flex items-center gap-2 mt-1">
               <h2 className="text-xl font-semibold text-ink">{nodeName}</h2>
-              <span className="px-2 py-0.5 rounded bg-surface-muted text-ink-secondary text-[10px] font-medium tracking-wider">{nodeType}</span>
+              <span className={`px-2 py-0.5 rounded text-[10px] font-medium tracking-wider ${LEVEL_COLORS[selected.level].badge}`}>{nodeType}</span>
               {asset && syncStatus && (
                 <span className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium ${
                   syncStatus.synced ? "bg-success-soft text-success" : "bg-danger-soft text-danger"
@@ -543,6 +545,61 @@ export function NodeWorkspace({ enterprise, selected, onRefresh, onDelete }: Pro
 }
 
 
+// ─── Level breadcrumb ──────────────────────────────────────────────────────────
+type BreadcrumbSegment = { level: HierarchyLevel; name: string };
+type HierarchyLevel = "enterprise" | "site" | "area" | "line" | "cell" | "asset";
+
+function buildBreadcrumb(enterprise: EnterpriseTree, selected: SelectedNode): BreadcrumbSegment[] {
+  const segs: BreadcrumbSegment[] = [{ level: "enterprise", name: enterprise.name }];
+  if (selected.level === "enterprise") return segs;
+  for (const site of enterprise.sites) {
+    if (selected.level === "site" && site.id === selected.id) return [...segs, { level: "site", name: site.name }];
+    for (const area of site.areas) {
+      if (selected.level === "area" && area.id === selected.id) return [...segs, { level: "site", name: site.name }, { level: "area", name: area.name }];
+      for (const line of area.lines) {
+        if (selected.level === "line" && line.id === selected.id) return [...segs, { level: "site", name: site.name }, { level: "area", name: area.name }, { level: "line", name: line.name }];
+        for (const cell of line.cells) {
+          if (selected.level === "cell" && cell.id === selected.id) return [...segs, { level: "site", name: site.name }, { level: "area", name: area.name }, { level: "line", name: line.name }, { level: "cell", name: cell.name }];
+          for (const asset of cell.assets) {
+            if (selected.level === "asset" && asset.id === selected.id) return [...segs, { level: "site", name: site.name }, { level: "area", name: area.name }, { level: "line", name: line.name }, { level: "cell", name: cell.name }, { level: "asset", name: asset.name }];
+          }
+        }
+      }
+    }
+  }
+  return segs;
+}
+
+function LevelBreadcrumb({ enterprise, selected }: { enterprise: EnterpriseTree; selected: SelectedNode }) {
+  const segs = buildBreadcrumb(enterprise, selected);
+  return (
+    <div className="flex flex-col gap-0.5">
+      {/* Level labels row */}
+      <div className="flex items-center gap-0">
+        {segs.map((seg, i) => (
+          <span key={i} className="flex items-center">
+            <span className={`text-[9px] font-semibold tracking-widest px-1 py-0.5 rounded uppercase ${LEVEL_COLORS[seg.level].badge}`}>
+              {seg.level}
+            </span>
+            {i < segs.length - 1 && <span className="text-ink-muted/40 text-[10px] mx-1">›</span>}
+          </span>
+        ))}
+      </div>
+      {/* Path row */}
+      <div className="flex items-center gap-0 font-mono text-xs text-ink-muted">
+        {segs.map((seg, i) => (
+          <span key={i} className="flex items-center">
+            <span className={i === segs.length - 1 ? "text-ink-secondary font-medium" : ""}>
+              {seg.name}
+            </span>
+            {i < segs.length - 1 && <span className="mx-1.5 text-ink-muted/40">/</span>}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function getNodeName(enterprise: EnterpriseTree, selected: SelectedNode): string {
   for (const s of enterprise.sites) {
     if (selected.level === "site" && s.id === selected.id) return s.name;
@@ -562,33 +619,6 @@ function getNodeName(enterprise: EnterpriseTree, selected: SelectedNode): string
   return selected.id;
 }
 
-function getNodePath(enterprise: EnterpriseTree, selected: SelectedNode): string {
-  const parts: string[] = [enterprise.name.toLowerCase()];
-  for (const s of enterprise.sites) {
-    if (selected.level === "site" && s.id === selected.id) return parts.join(" / ");
-    parts.push(s.name.toLowerCase());
-    for (const a of s.areas) {
-      if (selected.level === "area" && a.id === selected.id) return parts.join(" / ");
-      parts.push(a.name.toLowerCase());
-      for (const l of a.lines) {
-        if (selected.level === "line" && l.id === selected.id) return parts.join(" / ");
-        parts.push(l.name.toLowerCase());
-        for (const c of l.cells) {
-          if (selected.level === "cell" && c.id === selected.id) return parts.join(" / ");
-          parts.push(c.name.toLowerCase());
-          for (const asset of c.assets) {
-            if (selected.level === "asset" && asset.id === selected.id) return parts.join(" / ");
-          }
-          parts.pop();
-        }
-        parts.pop();
-      }
-      parts.pop();
-    }
-    parts.pop();
-  }
-  return enterprise.name.toLowerCase();
-}
 
 function buildTopic(enterprise: EnterpriseTree, selected: SelectedNode, _name: string): string {
   const slug = (s: string) => s.replace(/ /g, "_");

@@ -9,7 +9,7 @@ from app.database import get_db
 from app.models.uns import Enterprise
 from app.schemas.uns import EnterpriseCreate, EnterpriseRead, EnterpriseUpdate
 from app.services.uns_service import build_enterprise_topic
-from app.services.mqtt_service import publish_descriptive
+from app.services.mqtt_service import publish_descriptive, clear_retained
 
 router = APIRouter(prefix="/enterprises", tags=["Enterprises"])
 
@@ -46,10 +46,45 @@ async def update_enterprise(enterprise_id: str, body: EnterpriseUpdate, db: Asyn
     obj = await db.get(Enterprise, enterprise_id)
     if not obj:
         raise HTTPException(status_code=404, detail="Enterprise not found")
+
+    # Capture old topics before any name change
+    name_changing = body.name is not None and body.name != obj.name
+    if name_changing:
+        old_desc = build_enterprise_topic(obj, "_descriptive")
+        old_info = build_enterprise_topic(obj, "_informative")
+
     for field, value in body.model_dump(exclude_unset=True, by_alias=False).items():
         setattr(obj, field, value)
     await db.commit()
     await db.refresh(obj)
+
+    # Clear old retained messages after rename
+    if name_changing:
+        try:
+            clear_retained(old_desc)
+        except Exception:
+            pass
+        try:
+            clear_retained(old_info)
+        except Exception:
+            pass
+
+    # Auto-publish if payloads exist (sync on save)
+    if obj.descriptive_payload:
+        try:
+            publish_descriptive(build_enterprise_topic(obj, "_descriptive"), obj.descriptive_payload)
+        except Exception:
+            pass
+    if obj.informative_payload:
+        try:
+            publish_descriptive(build_enterprise_topic(obj, "_informative"), obj.informative_payload)
+        except Exception:
+            pass
+    if obj.descriptive_payload or obj.informative_payload:
+        obj.last_published_at = datetime.now(timezone.utc)
+        await db.commit()
+        await db.refresh(obj)
+
     return obj
 
 
@@ -79,5 +114,13 @@ async def delete_enterprise(enterprise_id: str, db: AsyncSession = Depends(get_d
     obj = await db.get(Enterprise, enterprise_id)
     if not obj:
         raise HTTPException(status_code=404, detail="Enterprise not found")
+    try:
+        clear_retained(build_enterprise_topic(obj, "_descriptive"))
+    except Exception:
+        pass
+    try:
+        clear_retained(build_enterprise_topic(obj, "_informative"))
+    except Exception:
+        pass
     await db.delete(obj)
     await db.commit()

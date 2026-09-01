@@ -10,7 +10,7 @@ from app.database import get_db
 from app.models.uns import Asset, Cell
 from app.schemas.uns import AssetCreate, AssetRead, AssetUpdate
 from app.services.uns_service import build_uns_topic
-from app.services.mqtt_service import publish_descriptive
+from app.services.mqtt_service import publish_descriptive, clear_retained
 from app.models.broker import Broker
 from app.services import broker_service
 
@@ -66,6 +66,9 @@ async def update_asset(cell_id: str, asset_id: str, body: AssetUpdate, db: Async
     if not obj or obj.cell_id != cell_id:
         raise HTTPException(status_code=404, detail="Asset not found")
 
+    name_changing = body.name is not None and body.name != obj.name
+    old_topic = obj.uns_topic if name_changing else None
+
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(obj, field, value)
 
@@ -75,6 +78,31 @@ async def update_asset(cell_id: str, asset_id: str, body: AssetUpdate, db: Async
     await db.commit()
     await db.refresh(obj)
 
+    if name_changing and old_topic:
+        try:
+            clear_retained(old_topic)
+        except Exception:
+            pass
+        try:
+            clear_retained(old_topic.replace("_descriptive", "_informative"))
+        except Exception:
+            pass
+
+    if obj.descriptive_payload:
+        try:
+            publish_descriptive(await build_uns_topic(obj, db, "_descriptive"), obj.descriptive_payload)
+        except Exception:
+            pass
+    if obj.informative_payload:
+        try:
+            publish_descriptive(await build_uns_topic(obj, db, "_informative"), obj.informative_payload)
+        except Exception:
+            pass
+    if obj.descriptive_payload or obj.informative_payload:
+        obj.last_published_at = datetime.now(timezone.utc)
+        await db.commit()
+        await db.refresh(obj)
+
     return obj
 
 
@@ -83,6 +111,15 @@ async def delete_asset(cell_id: str, asset_id: str, db: AsyncSession = Depends(g
     obj = await db.get(Asset, asset_id)
     if not obj or obj.cell_id != cell_id:
         raise HTTPException(status_code=404, detail="Asset not found")
+    if obj.uns_topic:
+        try:
+            clear_retained(obj.uns_topic)
+        except Exception:
+            pass
+        try:
+            clear_retained(obj.uns_topic.replace("_descriptive", "_informative"))
+        except Exception:
+            pass
     await db.delete(obj)
     await db.commit()
 

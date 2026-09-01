@@ -9,7 +9,7 @@ from app.database import get_db
 from app.models.uns import Area, Site
 from app.schemas.uns import AreaCreate, AreaRead, AreaUpdate
 from app.services.uns_service import build_area_topic
-from app.services.mqtt_service import publish_descriptive
+from app.services.mqtt_service import publish_descriptive, clear_retained
 
 router = APIRouter(prefix="/sites/{site_id}/areas", tags=["Areas"])
 
@@ -44,10 +44,42 @@ async def update_area(site_id: str, area_id: str, body: AreaUpdate, db: AsyncSes
     obj = await db.get(Area, area_id)
     if not obj or obj.site_id != site_id:
         raise HTTPException(status_code=404, detail="Area not found")
+
+    name_changing = body.name is not None and body.name != obj.name
+    if name_changing:
+        old_desc = await build_area_topic(obj, db, "_descriptive")
+        old_info = await build_area_topic(obj, db, "_informative")
+
     for field, value in body.model_dump(exclude_unset=True, by_alias=False).items():
         setattr(obj, field, value)
     await db.commit()
     await db.refresh(obj)
+
+    if name_changing:
+        try:
+            clear_retained(old_desc)
+        except Exception:
+            pass
+        try:
+            clear_retained(old_info)
+        except Exception:
+            pass
+
+    if obj.descriptive_payload:
+        try:
+            publish_descriptive(await build_area_topic(obj, db, "_descriptive"), obj.descriptive_payload)
+        except Exception:
+            pass
+    if obj.informative_payload:
+        try:
+            publish_descriptive(await build_area_topic(obj, db, "_informative"), obj.informative_payload)
+        except Exception:
+            pass
+    if obj.descriptive_payload or obj.informative_payload:
+        obj.last_published_at = datetime.now(timezone.utc)
+        await db.commit()
+        await db.refresh(obj)
+
     return obj
 
 
@@ -77,5 +109,13 @@ async def delete_area(site_id: str, area_id: str, db: AsyncSession = Depends(get
     obj = await db.get(Area, area_id)
     if not obj or obj.site_id != site_id:
         raise HTTPException(status_code=404, detail="Area not found")
+    try:
+        clear_retained(await build_area_topic(obj, db, "_descriptive"))
+    except Exception:
+        pass
+    try:
+        clear_retained(await build_area_topic(obj, db, "_informative"))
+    except Exception:
+        pass
     await db.delete(obj)
     await db.commit()
