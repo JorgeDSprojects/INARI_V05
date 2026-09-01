@@ -33,6 +33,7 @@ services:
     volumes:
       - emqx_data:/opt/emqx/data
       - emqx_log:/opt/emqx/log
+      - ./emqx/acl.conf:/opt/emqx/etc/acl.conf:ro
     healthcheck:
       test: ["CMD", "/opt/emqx/bin/emqx", "ctl", "status"]
       interval: 15s
