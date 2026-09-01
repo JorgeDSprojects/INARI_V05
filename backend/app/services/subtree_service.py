@@ -17,38 +17,45 @@ logger = logging.getLogger(__name__)
 LEVEL_ORDER = ["enterprise", "site", "area", "line", "cell", "asset"]
 
 
-async def _copy_sites(site: Site, new_enterprise_id: str, db: AsyncSession) -> int:
-    new_site = Site(id=_uuid(), enterprise_id=new_enterprise_id, name=site.name, description=site.description)
+async def _copy_sites(site: Site, new_enterprise_id: str, db: AsyncSession) -> tuple[str, int]:
+    new_id = _uuid()
+    new_site = Site(id=new_id, enterprise_id=new_enterprise_id, name=site.name, description=site.description)
     db.add(new_site)
     await db.flush()
     count = 1
     for area in site.areas:
-        count += await _copy_areas(area, new_site.id, db)
-    return count
+        _, child_count = await _copy_areas(area, new_site.id, db)
+        count += child_count
+    return new_id, count
 
 
-async def _copy_areas(area: Area, new_site_id: str, db: AsyncSession) -> int:
-    new_area = Area(id=_uuid(), site_id=new_site_id, name=area.name, description=area.description)
+async def _copy_areas(area: Area, new_site_id: str, db: AsyncSession) -> tuple[str, int]:
+    new_id = _uuid()
+    new_area = Area(id=new_id, site_id=new_site_id, name=area.name, description=area.description)
     db.add(new_area)
     await db.flush()
     count = 1
     for line in area.lines:
-        count += await _copy_lines(line, new_area.id, db)
-    return count
+        _, child_count = await _copy_lines(line, new_area.id, db)
+        count += child_count
+    return new_id, count
 
 
-async def _copy_lines(line: Line, new_area_id: str, db: AsyncSession) -> int:
-    new_line = Line(id=_uuid(), area_id=new_area_id, name=line.name, description=line.description)
+async def _copy_lines(line: Line, new_area_id: str, db: AsyncSession) -> tuple[str, int]:
+    new_id = _uuid()
+    new_line = Line(id=new_id, area_id=new_area_id, name=line.name, description=line.description)
     db.add(new_line)
     await db.flush()
     count = 1
     for cell in line.cells:
-        count += await _copy_cells(cell, new_line.id, db)
-    return count
+        _, child_count = await _copy_cells(cell, new_line.id, db)
+        count += child_count
+    return new_id, count
 
 
-async def _copy_cells(cell: Cell, new_line_id: str, db: AsyncSession) -> int:
-    new_cell = Cell(id=_uuid(), line_id=new_line_id, name=cell.name, description=cell.description)
+async def _copy_cells(cell: Cell, new_line_id: str, db: AsyncSession) -> tuple[str, int]:
+    new_id = _uuid()
+    new_cell = Cell(id=new_id, line_id=new_line_id, name=cell.name, description=cell.description)
     db.add(new_cell)
     await db.flush()
     count = 1
@@ -61,7 +68,7 @@ async def _copy_cells(cell: Cell, new_line_id: str, db: AsyncSession) -> int:
         )
         db.add(new_asset)
         count += 1
-    return count
+    return new_id, count
 
 
 async def copy_subtree(
@@ -76,9 +83,9 @@ async def copy_subtree(
         site = result.scalar_one_or_none()
         if not site:
             raise ValueError("Source site not found")
-        count = await _copy_sites(site, target_parent_id, db)
+        new_id, count = await _copy_sites(site, target_parent_id, db)
         await db.commit()
-        return {"new_root_id": target_parent_id, "node_count": count}
+        return {"new_root_id": new_id, "node_count": count}
 
     elif source_level == "area":
         result = await db.execute(
@@ -88,9 +95,9 @@ async def copy_subtree(
         area = result.scalar_one_or_none()
         if not area:
             raise ValueError("Source area not found")
-        count = await _copy_areas(area, target_parent_id, db)
+        new_id, count = await _copy_areas(area, target_parent_id, db)
         await db.commit()
-        return {"new_root_id": target_parent_id, "node_count": count}
+        return {"new_root_id": new_id, "node_count": count}
 
     elif source_level == "line":
         result = await db.execute(
@@ -100,9 +107,9 @@ async def copy_subtree(
         line = result.scalar_one_or_none()
         if not line:
             raise ValueError("Source line not found")
-        count = await _copy_lines(line, target_parent_id, db)
+        new_id, count = await _copy_lines(line, target_parent_id, db)
         await db.commit()
-        return {"new_root_id": target_parent_id, "node_count": count}
+        return {"new_root_id": new_id, "node_count": count}
 
     elif source_level == "cell":
         result = await db.execute(
@@ -112,9 +119,9 @@ async def copy_subtree(
         cell = result.scalar_one_or_none()
         if not cell:
             raise ValueError("Source cell not found")
-        count = await _copy_cells(cell, target_parent_id, db)
+        new_id, count = await _copy_cells(cell, target_parent_id, db)
         await db.commit()
-        return {"new_root_id": target_parent_id, "node_count": count}
+        return {"new_root_id": new_id, "node_count": count}
 
     raise ValueError(f"Unsupported source level: {source_level}")
 

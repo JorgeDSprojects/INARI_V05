@@ -70,6 +70,7 @@ export function CopyMoveModal({ sourceId, sourceLevel, sourceName, enterprise, o
   };
 
   const handlePublish = async () => {
+    setOpError(null);
     setPublishing(true);
     try {
       const r = await api.tree.publishSubtree({ root_id: sourceId, root_level: sourceLevel });
