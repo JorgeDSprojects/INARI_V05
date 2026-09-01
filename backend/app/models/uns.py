@@ -96,5 +96,8 @@ class Asset(TimestampMixin, Base):
     description: Mapped[str | None] = mapped_column(Text)
     descriptive_payload: Mapped[dict | None] = mapped_column(JSONB)
     uns_topic: Mapped[str | None] = mapped_column(String(1024))
+    node_type_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("node_types.id", ondelete="SET NULL"))
+    last_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     cell: Mapped[Cell] = relationship("Cell", back_populates="assets")
+    node_type: Mapped[object | None] = relationship("NodeType", back_populates="assets")

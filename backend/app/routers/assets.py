@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -99,4 +101,7 @@ async def publish_asset(cell_id: str, asset_id: str, db: AsyncSession = Depends(
         await db.refresh(obj)
     if obj.descriptive_payload:
         publish_descriptive(obj.uns_topic, obj.descriptive_payload)
+    obj.last_published_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(obj)
     return obj

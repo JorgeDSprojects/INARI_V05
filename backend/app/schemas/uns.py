@@ -140,12 +140,14 @@ class AssetCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     description: str | None = None
     descriptive_payload: dict[str, Any] | None = None
+    node_type_id: str | None = None
 
 
 class AssetUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
     descriptive_payload: dict[str, Any] | None = None
+    node_type_id: str | None = None
 
 
 class AssetRead(_Base):
@@ -155,6 +157,8 @@ class AssetRead(_Base):
     description: str | None
     descriptive_payload: dict[str, Any] | None
     uns_topic: str | None
+    node_type_id: str | None
+    last_published_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
