@@ -1,3 +1,4 @@
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -22,3 +23,12 @@ async def create_tables() -> None:
     from app.models import node_type  # noqa: F401
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Idempotent column additions for existing databases
+        await conn.execute(text(
+            "ALTER TABLE assets ADD COLUMN IF NOT EXISTS "
+            "node_type_id VARCHAR(36) REFERENCES node_types(id) ON DELETE SET NULL"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE assets ADD COLUMN IF NOT EXISTS "
+            "last_published_at TIMESTAMPTZ"
+        ))

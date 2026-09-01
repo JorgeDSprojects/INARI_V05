@@ -60,6 +60,7 @@ export function CreateWithDescriptiveModal({ cellId, onClose, onCreated }: Props
         name: name.trim(),
         description: description.trim() || undefined,
         descriptive_payload: parsed,
+        node_type_id: selectedNodeTypeId || undefined,
       });
       onCreated();
       onClose();

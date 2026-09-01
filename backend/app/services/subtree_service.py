@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -174,6 +175,7 @@ async def publish_subtree(root_id: str, root_level: str, db: AsyncSession) -> di
             topic = await build_uns_topic(asset, db)
             asset.uns_topic = topic
             publish_descriptive(topic, asset.descriptive_payload)
+            asset.last_published_at = datetime.now(timezone.utc)
             published += 1
         except Exception as exc:
             logger.error("Failed to publish asset %s: %s", asset.id, exc)

@@ -60,7 +60,7 @@ export const api = {
   },
   assets: {
     list: (cellId: string) => http.get<Asset[]>(`/cells/${cellId}/assets/`).then((r) => r.data),
-    create: (cellId: string, body: { name: string; description?: string; descriptive_payload?: Record<string, unknown> }) =>
+    create: (cellId: string, body: { name: string; description?: string; descriptive_payload?: Record<string, unknown>; node_type_id?: string }) =>
       http.post<Asset>(`/cells/${cellId}/assets/`, body).then((r) => r.data),
     update: (cellId: string, assetId: string, body: Partial<{ name: string; description: string; descriptive_payload: Record<string, unknown> }>) =>
       http.patch<Asset>(`/cells/${cellId}/assets/${assetId}`, body).then((r) => r.data),

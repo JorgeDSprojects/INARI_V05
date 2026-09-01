@@ -21,9 +21,16 @@ export function BrokersView() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [opError, setOpError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    setBrokers(await api.brokers.list());
+    try {
+      setBrokers(await api.brokers.list());
+      setLoadError(null);
+    } catch {
+      setLoadError("Failed to load brokers");
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -32,8 +39,12 @@ export function BrokersView() {
     if (!selected) { setStatus(null); return; }
     let cancelled = false;
     const poll = async () => {
-      const s = await api.brokers.status(selected.id);
-      if (!cancelled) setStatus(s);
+      try {
+        const s = await api.brokers.status(selected.id);
+        if (!cancelled) setStatus(s);
+      } catch {
+        // Status fetch failed — keep last known status, retry on next interval
+      }
     };
     poll();
     const id = setInterval(poll, 30000);
@@ -43,6 +54,7 @@ export function BrokersView() {
   const handleCreate = async () => {
     if (!form.label.trim() || !form.host.trim()) return;
     setSaving(true);
+    setOpError(null);
     try {
       const payload = {
         label: form.label.trim(), host: form.host.trim(),
@@ -54,22 +66,31 @@ export function BrokersView() {
       setBrokers(prev => [...prev, b]);
       setShowForm(false);
       setForm(EMPTY_FORM);
+    } catch {
+      setOpError("Failed to save broker");
     } finally { setSaving(false); }
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("Delete this broker?")) return;
-    await api.brokers.delete(id);
-    setBrokers(prev => prev.filter(b => b.id !== id));
-    if (selected?.id === id) { setSelected(null); setStatus(null); }
+    try {
+      await api.brokers.delete(id);
+      setBrokers(prev => prev.filter(b => b.id !== id));
+      if (selected?.id === id) { setSelected(null); setStatus(null); }
+    } catch {
+      setOpError("Failed to delete broker");
+    }
   };
 
   const handleTest = async () => {
     if (!selected) return;
     setTesting(true);
     setTestResult(null);
-    try { setTestResult(await api.brokers.test(selected.id)); }
-    finally { setTesting(false); }
+    try {
+      setTestResult(await api.brokers.test(selected.id));
+    } catch {
+      setOpError("Connection test failed");
+    } finally { setTesting(false); }
   };
 
   const setField = (key: keyof FormState, val: string | number | boolean) =>
@@ -132,7 +153,10 @@ export function BrokersView() {
         <div className="flex-1 overflow-y-auto">
           {brokers.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full gap-2 text-ink-muted text-sm py-12">
-              <span>No brokers registered</span>
+              {loadError
+                ? <span className="text-danger text-center px-4">{loadError}</span>
+                : <span>No brokers registered</span>
+              }
             </div>
           ) : brokers.map(b => (
             <button key={b.id} onClick={() => { setSelected(b); setTestResult(null); }}
@@ -206,6 +230,9 @@ export function BrokersView() {
                 <p className="mt-2 text-xs text-danger">{status.error}</p>
               )}
             </div>
+            {opError && (
+              <p className="text-sm text-danger">{opError}</p>
+            )}
           </div>
         </div>
       ) : (

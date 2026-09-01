@@ -32,6 +32,7 @@ async def create_asset(cell_id: str, body: AssetCreate, db: AsyncSession = Depen
         name=body.name,
         description=body.description,
         descriptive_payload=body.descriptive_payload or {},
+        node_type_id=body.node_type_id,
     )
     db.add(obj)
     await db.flush()
@@ -71,14 +72,14 @@ async def update_asset(cell_id: str, asset_id: str, body: AssetUpdate, db: Async
     if body.name is not None:
         obj.uns_topic = await build_uns_topic(obj, db)
 
-    await db.commit()
-    await db.refresh(obj)
-
     if obj.descriptive_payload and obj.uns_topic:
         try:
             publish_descriptive(obj.uns_topic, obj.descriptive_payload)
+            obj.last_published_at = datetime.now(timezone.utc)
         except Exception:
             pass
+    await db.commit()
+    await db.refresh(obj)
 
     return obj
 

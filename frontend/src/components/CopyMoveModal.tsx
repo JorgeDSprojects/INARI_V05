@@ -41,6 +41,7 @@ export function CopyMoveModal({ sourceId, sourceLevel, sourceName, enterprise, o
   const [targetParentId, setTargetParentId] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ count: number } | null>(null);
+  const [copiedRootId, setCopiedRootId] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<{ published: number; failed: number } | null>(null);
   const [opError, setOpError] = useState<string | null>(null);
@@ -57,9 +58,11 @@ export function CopyMoveModal({ sourceId, sourceLevel, sourceName, enterprise, o
       const body = { source_id: sourceId, source_level: sourceLevel, target_parent_id: targetParentId };
       if (mode === "copy") {
         const r = await api.tree.copy(body);
+        setCopiedRootId(r.new_root_id);
         setResult({ count: r.node_count });
       } else {
         const r = await api.tree.move(body);
+        setCopiedRootId(null);
         setResult({ count: r.node_count });
       }
     } catch {
@@ -73,7 +76,10 @@ export function CopyMoveModal({ sourceId, sourceLevel, sourceName, enterprise, o
     setOpError(null);
     setPublishing(true);
     try {
-      const r = await api.tree.publishSubtree({ root_id: sourceId, root_level: sourceLevel });
+      const r = await api.tree.publishSubtree({
+        root_id: (mode === "copy" && copiedRootId) ? copiedRootId : sourceId,
+        root_level: sourceLevel,
+      });
       setPublishResult(r);
       onDone();
     } catch {
