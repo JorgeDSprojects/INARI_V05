@@ -1,6 +1,7 @@
 import type { EnterpriseTree } from "../types/uns";
 import { api } from "../api/client";
 import { useState } from "react";
+import { CreateUnsWizard } from "./CreateUnsWizard";
 
 interface Props {
   tree: EnterpriseTree[];
@@ -16,25 +17,10 @@ function countNodes(e: EnterpriseTree) {
 }
 
 export function CatalogView({ tree, loading, onOpen, onRefresh }: Props) {
-  const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [showForm, setShowForm] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
 
   const totalNodes = tree.reduce((acc, e) => acc + countNodes(e), 0);
   const totalAssets = tree.reduce((acc, e) => acc + e.sites.flatMap(s => s.areas.flatMap(a => a.lines.flatMap(l => l.cells.flatMap(c => c.assets)))).length, 0);
-
-  const handleCreate = async () => {
-    if (!newName.trim()) return;
-    setCreating(true);
-    try {
-      await api.enterprises.create({ name: newName.trim() });
-      setNewName("");
-      setShowForm(false);
-      onRefresh();
-    } finally {
-      setCreating(false);
-    }
-  };
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -55,7 +41,7 @@ export function CatalogView({ tree, loading, onOpen, onRefresh }: Props) {
             </p>
           </div>
           <button
-            onClick={() => setShowForm(true)}
+            onClick={() => setShowWizard(true)}
             className="flex items-center gap-2 px-4 py-2 bg-ink text-white text-sm rounded font-medium hover:bg-ink/90"
           >
             + New UNS
@@ -76,30 +62,6 @@ export function CatalogView({ tree, loading, onOpen, onRefresh }: Props) {
             </div>
           ))}
         </div>
-
-        {/* Create form */}
-        {showForm && (
-          <div className="bg-surface border border-border rounded-lg p-4 flex items-center gap-3">
-            <input
-              autoFocus
-              className="flex-1 border border-border rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-              placeholder="Namespace name (e.g. ACME Corp)"
-              value={newName}
-              onChange={e => setNewName(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && handleCreate()}
-            />
-            <button
-              onClick={handleCreate}
-              disabled={creating || !newName.trim()}
-              className="px-4 py-1.5 bg-ink text-white text-sm rounded disabled:opacity-50"
-            >
-              {creating ? "Creating…" : "Create"}
-            </button>
-            <button onClick={() => setShowForm(false)} className="text-ink-muted text-sm hover:text-ink">
-              Cancel
-            </button>
-          </div>
-        )}
 
         {/* Table */}
         <div className="bg-surface border border-border rounded-lg overflow-hidden">
@@ -151,6 +113,12 @@ export function CatalogView({ tree, loading, onOpen, onRefresh }: Props) {
           )}
         </div>
       </div>
+      {showWizard && (
+        <CreateUnsWizard
+          onClose={() => setShowWizard(false)}
+          onCreated={onRefresh}
+        />
+      )}
     </div>
   );
 }
