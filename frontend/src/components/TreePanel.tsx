@@ -101,6 +101,18 @@ export function TreePanel({ enterprise, selected, onSelect, onRefresh }: Props) 
   const [newName, setNewName] = useState("");
   const [assetModalCellId, setAssetModalCellId] = useState<string | null>(null);
   const [copyMoveNode, setCopyMoveNode] = useState<{ id: string; level: HierarchyLevel; name: string } | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ published: number; failed: number } | null>(null);
+
+  const syncAll = async () => {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const result = await api.tree.publishSubtree({ root_id: enterprise.id, root_level: "enterprise" });
+      setSyncResult(result);
+      setTimeout(() => setSyncResult(null), 4000);
+    } finally { setSyncing(false); }
+  };
 
   const createChild = async () => {
     if (!addingChild || !newName.trim()) return;
@@ -134,17 +146,32 @@ export function TreePanel({ enterprise, selected, onSelect, onRefresh }: Props) 
               {enterprise.name}
             </div>
           </div>
-          <button
-            onClick={() => setAddingChild({ level: "enterprise", parentId: enterprise.id })}
-            className="flex items-center gap-1 px-2 py-1 text-xs text-ink-secondary hover:text-ink rounded border border-border bg-surface"
-          >
-            + Add
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={syncAll}
+              disabled={syncing}
+              title="Publish all retained payloads to MQTT broker"
+              className="flex items-center gap-1 px-2 py-1 text-xs text-ink-secondary hover:text-ink rounded border border-border bg-surface disabled:opacity-50"
+            >
+              {syncing ? "⟳" : "↑ Sync"}
+            </button>
+            <button
+              onClick={() => setAddingChild({ level: "enterprise", parentId: enterprise.id })}
+              className="flex items-center gap-1 px-2 py-1 text-xs text-ink-secondary hover:text-ink rounded border border-border bg-surface"
+            >
+              + Add
+            </button>
+          </div>
         </div>
         <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-surface-muted w-fit">
           <span className="text-accent text-[10px]">◈</span>
           <span className="text-ink-secondary text-xs font-mono">{rootTopic}</span>
         </div>
+        {syncResult && (
+          <div className={`mt-1.5 px-2 py-1 rounded text-xs ${syncResult.failed === 0 ? "bg-success/10 text-success" : "bg-warning/10 text-warning"}`}>
+            ↑ {syncResult.published} published{syncResult.failed > 0 ? `, ${syncResult.failed} failed` : " ✓"}
+          </div>
+        )}
       </div>
 
       {/* Search */}
