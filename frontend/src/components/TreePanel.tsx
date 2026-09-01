@@ -22,9 +22,10 @@ interface RowProps {
   onClick: () => void;
   onAdd?: () => void;
   onCopy?: () => void;
+  children?: React.ReactNode;
 }
 
-function TreeRow({ label, level, indent, selected, hasChildren, status = "idle", onClick, onAdd, onCopy }: RowProps) {
+function TreeRow({ label, level, indent, selected, hasChildren, status = "idle", onClick, onAdd, onCopy, children }: RowProps) {
   const [open, setOpen] = useState(true);
   const [hovered, setHovered] = useState(false);
 
@@ -80,7 +81,7 @@ function TreeRow({ label, level, indent, selected, hasChildren, status = "idle",
           >⧉</button>
         )}
       </div>
-      {open && hasChildren && <div>{/* children rendered by parent */}</div>}
+      {open && children}
     </div>
   );
 }
@@ -124,7 +125,14 @@ export function TreePanel({ enterprise, selected, onSelect, onRefresh }: Props) 
         <div className="flex items-center justify-between mb-2">
           <div>
             <div className="text-[10px] tracking-widest text-ink-muted">NAMESPACE</div>
-            <div className="text-sm font-semibold text-ink truncate">{enterprise.name}</div>
+            <div
+              className={`text-sm font-semibold truncate cursor-pointer hover:text-accent transition-colors ${
+                selected?.level === "enterprise" && selected.id === enterprise.id ? "text-accent" : "text-ink"
+              }`}
+              onClick={() => onSelect({ level: "enterprise", id: enterprise.id, parentIds: {} })}
+            >
+              {enterprise.name}
+            </div>
           </div>
           <button
             onClick={() => setAddingChild({ level: "enterprise", parentId: enterprise.id })}
@@ -172,45 +180,45 @@ export function TreePanel({ enterprise, selected, onSelect, onRefresh }: Props) 
         {enterprise.sites
           .filter(s => !search || s.name.toLowerCase().includes(search.toLowerCase()))
           .map(site => (
-            <div key={site.id}>
-              <TreeRow
-                label={site.name} level="site" id={site.id} indent={0}
-                hasChildren={site.areas.length > 0} status="synced"
-                selected={selected?.level === "site" && selected.id === site.id}
-                onClick={() => onSelect({ level: "site", id: site.id, parentIds: { enterprise_id: enterprise.id } })}
-                onAdd={() => setAddingChild({ level: "site", parentId: site.id })}
-                onCopy={() => setCopyMoveNode({ id: site.id, level: "site", name: site.name })}
-              />
+            <TreeRow
+              key={site.id}
+              label={site.name} level="site" id={site.id} indent={0}
+              hasChildren={site.areas.length > 0} status="synced"
+              selected={selected?.level === "site" && selected.id === site.id}
+              onClick={() => onSelect({ level: "site", id: site.id, parentIds: { enterprise_id: enterprise.id } })}
+              onAdd={() => setAddingChild({ level: "site", parentId: site.id })}
+              onCopy={() => setCopyMoveNode({ id: site.id, level: "site", name: site.name })}
+            >
               {site.areas.map(area => (
-                <div key={area.id}>
-                  <TreeRow
-                    label={area.name} level="area" id={area.id} indent={1}
-                    hasChildren={area.lines.length > 0}
-                    selected={selected?.level === "area" && selected.id === area.id}
-                    onClick={() => onSelect({ level: "area", id: area.id, parentIds: { site_id: site.id } })}
-                    onAdd={() => setAddingChild({ level: "area", parentId: area.id })}
-                    onCopy={() => setCopyMoveNode({ id: area.id, level: "area", name: area.name })}
-                  />
+                <TreeRow
+                  key={area.id}
+                  label={area.name} level="area" id={area.id} indent={1}
+                  hasChildren={area.lines.length > 0}
+                  selected={selected?.level === "area" && selected.id === area.id}
+                  onClick={() => onSelect({ level: "area", id: area.id, parentIds: { site_id: site.id } })}
+                  onAdd={() => setAddingChild({ level: "area", parentId: area.id })}
+                  onCopy={() => setCopyMoveNode({ id: area.id, level: "area", name: area.name })}
+                >
                   {area.lines.map(line => (
-                    <div key={line.id}>
-                      <TreeRow
-                        label={line.name} level="line" id={line.id} indent={2}
-                        hasChildren={line.cells.length > 0}
-                        selected={selected?.level === "line" && selected.id === line.id}
-                        onClick={() => onSelect({ level: "line", id: line.id, parentIds: { area_id: area.id } })}
-                        onAdd={() => setAddingChild({ level: "line", parentId: line.id })}
-                        onCopy={() => setCopyMoveNode({ id: line.id, level: "line", name: line.name })}
-                      />
+                    <TreeRow
+                      key={line.id}
+                      label={line.name} level="line" id={line.id} indent={2}
+                      hasChildren={line.cells.length > 0}
+                      selected={selected?.level === "line" && selected.id === line.id}
+                      onClick={() => onSelect({ level: "line", id: line.id, parentIds: { area_id: area.id } })}
+                      onAdd={() => setAddingChild({ level: "line", parentId: line.id })}
+                      onCopy={() => setCopyMoveNode({ id: line.id, level: "line", name: line.name })}
+                    >
                       {line.cells.map(cell => (
-                        <div key={cell.id}>
-                          <TreeRow
-                            label={cell.name} level="cell" id={cell.id} indent={3}
-                            hasChildren={cell.assets.length > 0}
-                            selected={selected?.level === "cell" && selected.id === cell.id}
-                            onClick={() => onSelect({ level: "cell", id: cell.id, parentIds: { line_id: line.id } })}
-                            onAdd={() => setAssetModalCellId(cell.id)}
-                            onCopy={() => setCopyMoveNode({ id: cell.id, level: "cell", name: cell.name })}
-                          />
+                        <TreeRow
+                          key={cell.id}
+                          label={cell.name} level="cell" id={cell.id} indent={3}
+                          hasChildren={cell.assets.length > 0}
+                          selected={selected?.level === "cell" && selected.id === cell.id}
+                          onClick={() => onSelect({ level: "cell", id: cell.id, parentIds: { line_id: line.id } })}
+                          onAdd={() => setAssetModalCellId(cell.id)}
+                          onCopy={() => setCopyMoveNode({ id: cell.id, level: "cell", name: cell.name })}
+                        >
                           {cell.assets.map(asset => (
                             <TreeRow
                               key={asset.id}
@@ -221,13 +229,13 @@ export function TreePanel({ enterprise, selected, onSelect, onRefresh }: Props) 
                               onClick={() => onSelect({ level: "asset", id: asset.id, parentIds: { cell_id: cell.id } })}
                             />
                           ))}
-                        </div>
+                        </TreeRow>
                       ))}
-                    </div>
+                    </TreeRow>
                   ))}
-                </div>
+                </TreeRow>
               ))}
-            </div>
+            </TreeRow>
           ))}
       </div>
 
