@@ -2,6 +2,9 @@ export interface Enterprise {
   id: string;
   name: string;
   description: string | null;
+  descriptive_payload: Record<string, unknown> | null;
+  informative_payload: Record<string, unknown> | null;
+  last_published_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -11,6 +14,9 @@ export interface Site {
   enterprise_id: string;
   name: string;
   description: string | null;
+  descriptive_payload: Record<string, unknown> | null;
+  informative_payload: Record<string, unknown> | null;
+  last_published_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -20,6 +26,9 @@ export interface Area {
   site_id: string;
   name: string;
   description: string | null;
+  descriptive_payload: Record<string, unknown> | null;
+  informative_payload: Record<string, unknown> | null;
+  last_published_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -29,6 +38,9 @@ export interface Line {
   area_id: string;
   name: string;
   description: string | null;
+  descriptive_payload: Record<string, unknown> | null;
+  informative_payload: Record<string, unknown> | null;
+  last_published_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -38,6 +50,9 @@ export interface Cell {
   line_id: string;
   name: string;
   description: string | null;
+  descriptive_payload: Record<string, unknown> | null;
+  informative_payload: Record<string, unknown> | null;
+  last_published_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -48,6 +63,7 @@ export interface Asset {
   name: string;
   description: string | null;
   descriptive_payload: Record<string, unknown> | null;
+  informative_payload: Record<string, unknown> | null;
   uns_topic: string | null;
   node_type_id: string | null;
   last_published_at: string | null;

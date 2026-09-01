@@ -5,6 +5,11 @@ const BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
 const http = axios.create({ baseURL: BASE });
 
+type PayloadFields = {
+  descriptive_payload?: Record<string, unknown> | null;
+  informative_payload?: Record<string, unknown> | null;
+};
+
 export const api = {
   tree: {
     get: () => http.get<EnterpriseTree[]>("/tree/").then((r) => r.data),
@@ -20,49 +25,59 @@ export const api = {
     get: (id: string) => http.get<Enterprise>(`/enterprises/${id}`).then((r) => r.data),
     create: (body: { name: string; description?: string; metadata?: Record<string, unknown> }) =>
       http.post<Enterprise>("/enterprises/", body).then((r) => r.data),
-    update: (id: string, body: Partial<{ name: string; description: string; metadata: Record<string, unknown> }>) =>
+    update: (id: string, body: Partial<{ name: string; description: string; metadata: Record<string, unknown> } & PayloadFields>) =>
       http.patch<Enterprise>(`/enterprises/${id}`, body).then((r) => r.data),
     delete: (id: string) => http.delete(`/enterprises/${id}`),
+    publish: (id: string) =>
+      http.post<Enterprise>(`/enterprises/${id}/publish`).then((r) => r.data),
   },
   sites: {
     list: (enterpriseId: string) =>
       http.get<Site[]>(`/enterprises/${enterpriseId}/sites/`).then((r) => r.data),
     create: (enterpriseId: string, body: { name: string; description?: string }) =>
       http.post<Site>(`/enterprises/${enterpriseId}/sites/`, body).then((r) => r.data),
-    update: (enterpriseId: string, siteId: string, body: Partial<{ name: string; description: string }>) =>
+    update: (enterpriseId: string, siteId: string, body: Partial<{ name: string; description: string } & PayloadFields>) =>
       http.patch<Site>(`/enterprises/${enterpriseId}/sites/${siteId}`, body).then((r) => r.data),
     delete: (enterpriseId: string, siteId: string) =>
       http.delete(`/enterprises/${enterpriseId}/sites/${siteId}`),
+    publish: (enterpriseId: string, siteId: string) =>
+      http.post<Site>(`/enterprises/${enterpriseId}/sites/${siteId}/publish`).then((r) => r.data),
   },
   areas: {
     list: (siteId: string) => http.get<Area[]>(`/sites/${siteId}/areas/`).then((r) => r.data),
     create: (siteId: string, body: { name: string; description?: string }) =>
       http.post<Area>(`/sites/${siteId}/areas/`, body).then((r) => r.data),
-    update: (siteId: string, areaId: string, body: Partial<{ name: string; description: string }>) =>
+    update: (siteId: string, areaId: string, body: Partial<{ name: string; description: string } & PayloadFields>) =>
       http.patch<Area>(`/sites/${siteId}/areas/${areaId}`, body).then((r) => r.data),
     delete: (siteId: string, areaId: string) => http.delete(`/sites/${siteId}/areas/${areaId}`),
+    publish: (siteId: string, areaId: string) =>
+      http.post<Area>(`/sites/${siteId}/areas/${areaId}/publish`).then((r) => r.data),
   },
   lines: {
     list: (areaId: string) => http.get<Line[]>(`/areas/${areaId}/lines/`).then((r) => r.data),
     create: (areaId: string, body: { name: string; description?: string }) =>
       http.post<Line>(`/areas/${areaId}/lines/`, body).then((r) => r.data),
-    update: (areaId: string, lineId: string, body: Partial<{ name: string; description: string }>) =>
+    update: (areaId: string, lineId: string, body: Partial<{ name: string; description: string } & PayloadFields>) =>
       http.patch<Line>(`/areas/${areaId}/lines/${lineId}`, body).then((r) => r.data),
     delete: (areaId: string, lineId: string) => http.delete(`/areas/${areaId}/lines/${lineId}`),
+    publish: (areaId: string, lineId: string) =>
+      http.post<Line>(`/areas/${areaId}/lines/${lineId}/publish`).then((r) => r.data),
   },
   cells: {
     list: (lineId: string) => http.get<Cell[]>(`/lines/${lineId}/cells/`).then((r) => r.data),
     create: (lineId: string, body: { name: string; description?: string }) =>
       http.post<Cell>(`/lines/${lineId}/cells/`, body).then((r) => r.data),
-    update: (lineId: string, cellId: string, body: Partial<{ name: string; description: string }>) =>
+    update: (lineId: string, cellId: string, body: Partial<{ name: string; description: string } & PayloadFields>) =>
       http.patch<Cell>(`/lines/${lineId}/cells/${cellId}`, body).then((r) => r.data),
     delete: (lineId: string, cellId: string) => http.delete(`/lines/${lineId}/cells/${cellId}`),
+    publish: (lineId: string, cellId: string) =>
+      http.post<Cell>(`/lines/${lineId}/cells/${cellId}/publish`).then((r) => r.data),
   },
   assets: {
     list: (cellId: string) => http.get<Asset[]>(`/cells/${cellId}/assets/`).then((r) => r.data),
     create: (cellId: string, body: { name: string; description?: string; descriptive_payload?: Record<string, unknown>; node_type_id?: string }) =>
       http.post<Asset>(`/cells/${cellId}/assets/`, body).then((r) => r.data),
-    update: (cellId: string, assetId: string, body: Partial<{ name: string; description: string; descriptive_payload: Record<string, unknown> }>) =>
+    update: (cellId: string, assetId: string, body: Partial<{ name: string; description: string } & PayloadFields>) =>
       http.patch<Asset>(`/cells/${cellId}/assets/${assetId}`, body).then((r) => r.data),
     delete: (cellId: string, assetId: string) => http.delete(`/cells/${cellId}/assets/${assetId}`),
     publish: (cellId: string, assetId: string) =>
