@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -17,6 +18,10 @@ from app.schemas.node_type import (
 from app.services import node_type_service
 
 router = APIRouter(prefix="/node-types", tags=["Node Types"])
+
+
+class ValidateBody(BaseModel):
+    payload: dict[str, Any]
 
 
 @router.get("/", response_model=list[NodeTypeRead])
@@ -72,11 +77,11 @@ async def delete_node_type(node_type_id: str, db: AsyncSession = Depends(get_db)
 @router.post("/{node_type_id}/validate", response_model=ValidationResult)
 async def validate_payload(
     node_type_id: str,
-    body: dict[str, Any],
+    body: ValidateBody,
     db: AsyncSession = Depends(get_db),
 ):
     obj = await db.get(NodeType, node_type_id)
     if not obj:
         raise HTTPException(status_code=404, detail="Node type not found")
-    valid, errors = node_type_service.validate_payload(obj.json_schema, body.get("payload", body))
+    valid, errors = node_type_service.validate_payload(obj.json_schema, body.payload)
     return ValidationResult(valid=valid, errors=errors)
