@@ -14,28 +14,39 @@ export function CreateUnsWizard({ onClose, onCreated }: Props) {
   const [broker, setBroker] = useState<Broker | null>(null);
   const [brokerStatus, setBrokerStatus] = useState<BrokerStatus | null>(null);
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const rootTopic = name.trim()
     ? name.trim().toLowerCase().replace(/\s+/g, "_")
     : "…";
 
   useEffect(() => {
-    api.brokers.list().then(list => {
-      if (list.length > 0) {
-        setBroker(list[0]);
-        api.brokers.status(list[0].id).then(setBrokerStatus);
-      }
-    });
+    api.brokers.list()
+      .then(list => {
+        if (list.length > 0) {
+          setBroker(list[0]);
+          return api.brokers.status(list[0].id).then(setBrokerStatus);
+        }
+      })
+      .catch(() => {
+        // Network failure — leave broker null, Step 2 will show "No broker configured"
+        // This is acceptable: user sees the same warning, can go to Brokers tab
+      });
   }, []);
 
   const handleCreate = async () => {
     if (!name.trim()) return;
     setCreating(true);
+    setCreateError(null);
     try {
       await api.enterprises.create({ name: name.trim(), description: description.trim() || undefined });
       onCreated();
       onClose();
-    } finally { setCreating(false); }
+    } catch {
+      setCreateError("Failed to create namespace. Please try again.");
+    } finally {
+      setCreating(false);
+    }
   };
 
   const STEPS = ["Name", "Broker", "Confirm"];
@@ -138,6 +149,9 @@ export function CreateUnsWizard({ onClose, onCreated }: Props) {
                   </div>
                 ))}
               </div>
+              {createError && (
+                <p className="text-sm text-danger mt-3">{createError}</p>
+              )}
             </div>
           )}
         </div>
