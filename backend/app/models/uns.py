@@ -31,6 +31,9 @@ class Enterprise(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     description: Mapped[str | None] = mapped_column(Text)
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB)
+    descriptive_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    informative_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    last_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     sites: Mapped[list[Site]] = relationship("Site", back_populates="enterprise", cascade="all, delete-orphan")
 
@@ -43,6 +46,9 @@ class Site(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB)
+    descriptive_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    informative_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    last_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     enterprise: Mapped[Enterprise] = relationship("Enterprise", back_populates="sites")
     areas: Mapped[list[Area]] = relationship("Area", back_populates="site", cascade="all, delete-orphan")
@@ -56,6 +62,9 @@ class Area(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB)
+    descriptive_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    informative_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    last_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     site: Mapped[Site] = relationship("Site", back_populates="areas")
     lines: Mapped[list[Line]] = relationship("Line", back_populates="area", cascade="all, delete-orphan")
@@ -69,6 +78,9 @@ class Line(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB)
+    descriptive_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    informative_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    last_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     area: Mapped[Area] = relationship("Area", back_populates="lines")
     cells: Mapped[list[Cell]] = relationship("Cell", back_populates="line", cascade="all, delete-orphan")
@@ -82,6 +94,9 @@ class Cell(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB)
+    descriptive_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    informative_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    last_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     line: Mapped[Line] = relationship("Line", back_populates="cells")
     assets: Mapped[list[Asset]] = relationship("Asset", back_populates="cell", cascade="all, delete-orphan")
@@ -95,6 +110,7 @@ class Asset(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     descriptive_payload: Mapped[dict | None] = mapped_column(JSONB)
+    informative_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     uns_topic: Mapped[str | None] = mapped_column(String(1024))
     node_type_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("node_types.id", ondelete="SET NULL"))
     last_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
