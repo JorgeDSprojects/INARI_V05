@@ -182,6 +182,7 @@ class AssetRead(_Base):
     name: str
     description: str | None
     descriptive_payload: dict[str, Any] | None
+    informative_payload: dict[str, Any] | None
     uns_topic: str | None
     node_type_id: str | None
     last_published_at: datetime | None
