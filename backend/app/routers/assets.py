@@ -124,4 +124,7 @@ async def get_asset_branches(cell_id: str, asset_id: str, db: AsyncSession = Dep
     if not b:
         return []
 
-    return await broker_service.get_subscriptions(b, obj.uns_topic)
+    try:
+        return await broker_service.get_subscriptions(b, obj.uns_topic)
+    except Exception:
+        return []

@@ -36,6 +36,7 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
 
   useEffect(() => {
     if (tab !== "branches" || !asset || !selected?.parentIds.cell_id) return;
+    setBranches([]);
     setBranchesLoading(true);
     setBranchesError(false);
     api.branches.list(selected.parentIds.cell_id, asset.id)
@@ -212,6 +213,7 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
               <button
                 onClick={() => {
                   if (!asset || !selected?.parentIds.cell_id) return;
+                  setBranchesError(false);
                   setBranchesLoading(true);
                   api.branches.list(selected.parentIds.cell_id, asset.id)
                     .then(data => { setBranches(data); setBranchesLoading(false); })
