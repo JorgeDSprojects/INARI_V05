@@ -49,6 +49,8 @@ export interface Asset {
   description: string | null;
   descriptive_payload: Record<string, unknown> | null;
   uns_topic: string | null;
+  node_type_id: string | null;
+  last_published_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -104,4 +106,18 @@ export interface BrokerTestResult {
   ok: boolean;
   latency_ms: number | null;
   error: string | null;
+}
+
+export interface NodeType {
+  id: string;
+  name: string;
+  description: string | null;
+  json_schema: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ValidationResult {
+  valid: boolean;
+  errors: string[];
 }

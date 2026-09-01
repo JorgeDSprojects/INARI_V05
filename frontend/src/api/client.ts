@@ -1,5 +1,5 @@
 import axios from "axios";
-import type { Asset, Area, Broker, BrokerStatus, BrokerTestResult, Cell, Enterprise, EnterpriseTree, Line, Site } from "../types/uns";
+import type { Asset, Area, Broker, BrokerStatus, BrokerTestResult, Cell, Enterprise, EnterpriseTree, Line, NodeType, Site, ValidationResult } from "../types/uns";
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -71,5 +71,15 @@ export const api = {
     delete: (id: string) => http.delete(`/brokers/${id}`),
     status: (id: string) => http.get<BrokerStatus>(`/brokers/${id}/status`).then((r) => r.data),
     test: (id: string) => http.post<BrokerTestResult>(`/brokers/${id}/test`).then((r) => r.data),
+  },
+  nodeTypes: {
+    list: () => http.get<NodeType[]>("/node-types/").then((r) => r.data),
+    create: (body: { name: string; description?: string; json_schema: Record<string, unknown> }) =>
+      http.post<NodeType>("/node-types/", body).then((r) => r.data),
+    update: (id: string, body: Partial<{ name: string; description: string; json_schema: Record<string, unknown> }>) =>
+      http.put<NodeType>(`/node-types/${id}`, body).then((r) => r.data),
+    delete: (id: string) => http.delete(`/node-types/${id}`),
+    validate: (id: string, payload: Record<string, unknown>) =>
+      http.post<ValidationResult>(`/node-types/${id}/validate`, { payload }).then((r) => r.data),
   },
 };
