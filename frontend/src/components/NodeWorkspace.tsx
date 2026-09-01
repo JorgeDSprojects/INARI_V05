@@ -27,6 +27,10 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
   const [branchesError, setBranchesError] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [nameValue, setNameValue] = useState("");
+  const [descValue, setDescValue] = useState("");
+  const [nameSaving, setNameSaving] = useState(false);
+  const [nameSaved, setNameSaved] = useState(false);
 
   useEffect(() => {
     // Reset all payload state on node change
@@ -46,7 +50,10 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
     if (node) {
       setPayload(node.descriptive_payload ?? {});
       setInfoPayload(node.informative_payload ?? {});
+      setNameValue(node.name);
+      setDescValue(node.description ?? "");
     }
+    setNameSaved(false);
 
     // For assets: also fetch the full Asset object from the API
     // (needed for uns_topic, node_type_id, and sync status)
@@ -86,6 +93,25 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
   const nodeName = getNodeName(enterprise, selected);
   const nodePath = getNodePath(enterprise, selected);
   const nodeType = selected.level.toUpperCase();
+
+  const handleSaveName = async () => {
+    if (!selected || !nameValue.trim()) return;
+    setNameSaving(true);
+    try {
+      const body = { name: nameValue.trim(), description: descValue.trim() || undefined };
+      switch (selected.level) {
+        case "enterprise": await api.enterprises.update(selected.id, body); break;
+        case "site": await api.sites.update(selected.parentIds.enterprise_id, selected.id, body); break;
+        case "area": await api.areas.update(selected.parentIds.site_id, selected.id, body); break;
+        case "line": await api.lines.update(selected.parentIds.area_id, selected.id, body); break;
+        case "cell": await api.cells.update(selected.parentIds.line_id, selected.id, body); break;
+        case "asset": await api.assets.update(selected.parentIds.cell_id, selected.id, body); break;
+      }
+      setNameSaved(true);
+      setTimeout(() => setNameSaved(false), 3000);
+      onRefresh();
+    } finally { setNameSaving(false); }
+  };
 
   const handleSave = async () => {
     if (!selected) return;
@@ -182,6 +208,7 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {tab !== "definition" && (
             <button
               onClick={() => {
                 if (tab === "_informative") setInfoEditMode(!infoEditMode);
@@ -191,6 +218,7 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
             >
               Edit node
             </button>
+          )}
             {selected.level !== "asset" && (
               <button
                 className="flex items-center gap-1.5 px-3 py-2 text-sm bg-ink text-white rounded hover:bg-ink/90"
@@ -329,7 +357,77 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
             lines={JSON.stringify(infoPayload, null, 2).split("\n").length}
           />
         ) : tab === "definition" ? (
-          <DefinitionPanel enterprise={enterprise} selected={selected} />
+          <div className="flex-1 p-6 overflow-y-auto">
+            <div className="max-w-lg space-y-6">
+              {/* Read-only meta */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <div className="text-[10px] tracking-widest text-ink-muted mb-1">LEVEL</div>
+                  <div className="text-sm text-ink font-mono">{nodeType}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] tracking-widest text-ink-muted mb-1">ID</div>
+                  <div className="text-sm text-ink font-mono truncate">{selected.id}</div>
+                </div>
+              </div>
+
+              {/* Editable name */}
+              <div>
+                <label className="text-[10px] tracking-widest text-ink-muted block mb-1">NAME</label>
+                <input
+                  type="text"
+                  value={nameValue}
+                  onChange={e => setNameValue(e.target.value)}
+                  className="w-full px-3 py-2 rounded border border-border bg-surface text-sm text-ink focus:outline-none focus:border-accent"
+                  placeholder="Node name"
+                />
+              </div>
+
+              {/* Editable description */}
+              <div>
+                <label className="text-[10px] tracking-widest text-ink-muted block mb-1">DESCRIPTION</label>
+                <textarea
+                  value={descValue}
+                  onChange={e => setDescValue(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 rounded border border-border bg-surface text-sm text-ink focus:outline-none focus:border-accent resize-none"
+                  placeholder="Optional description"
+                />
+              </div>
+
+              {/* UNS topic preview */}
+              <div>
+                <div className="text-[10px] tracking-widest text-ink-muted mb-1">UNS TOPIC (preview)</div>
+                <div className="font-mono text-xs text-ink-secondary bg-surface-subtle rounded px-3 py-2 break-all">
+                  {buildTopic(enterprise, selected, nodeName)}
+                </div>
+                {nameValue.trim() !== nodeName && nameValue.trim() && (
+                  <div className="font-mono text-xs text-accent bg-accent-soft rounded px-3 py-2 mt-1 break-all">
+                    → {buildTopic(enterprise, selected, nodeName).replace(
+                        nodeName.replace(/ /g, "_"),
+                        nameValue.trim().replace(/ /g, "_")
+                      )}
+                  </div>
+                )}
+              </div>
+
+              {/* Save button */}
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleSaveName}
+                  disabled={nameSaving || !nameValue.trim() || (nameValue.trim() === nodeName && descValue.trim() === (findNodeInTree(enterprise, selected)?.description ?? ""))}
+                  className="px-4 py-2 bg-ink text-white text-sm rounded disabled:opacity-40 hover:bg-ink/90"
+                >
+                  {nameSaving ? "Saving…" : nameSaved ? "Saved ✓" : "Save changes"}
+                </button>
+                {nameValue.trim() !== nodeName && (
+                  <span className="text-xs text-warning">
+                    ⚠ Changing the name alters the MQTT topic — republish to update the broker
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
         ) : tab === "branches" ? (
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="flex items-center justify-between px-5 py-3 border-b border-border-subtle bg-surface-subtle">
@@ -386,25 +484,6 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
   );
 }
 
-function DefinitionPanel({ enterprise, selected }: { enterprise: EnterpriseTree; selected: SelectedNode }) {
-  const nodeName = getNodeName(enterprise, selected);
-  return (
-    <div className="flex-1 p-6 space-y-4 overflow-y-auto">
-      <div className="grid grid-cols-2 gap-4 max-w-lg">
-        {[
-          ["Level", selected.level.toUpperCase()],
-          ["Name", nodeName],
-          ["ID", selected.id],
-        ].map(([k, v]) => (
-          <div key={k}>
-            <div className="text-[10px] tracking-widest text-ink-muted mb-1">{k}</div>
-            <div className="text-sm text-ink font-mono">{v}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function getNodeName(enterprise: EnterpriseTree, selected: SelectedNode): string {
   for (const s of enterprise.sites) {
@@ -484,6 +563,8 @@ function buildTopic(enterprise: EnterpriseTree, selected: SelectedNode, _name: s
 }
 
 type NodePayloads = {
+  name: string;
+  description: string | null;
   descriptive_payload: Record<string, unknown> | null;
   informative_payload: Record<string, unknown> | null;
 };
