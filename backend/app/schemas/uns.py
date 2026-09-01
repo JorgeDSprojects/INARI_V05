@@ -23,6 +23,8 @@ class EnterpriseUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
     metadata_: dict[str, Any] | None = Field(default=None, alias="metadata")
+    descriptive_payload: dict[str, Any] | None = None
+    informative_payload: dict[str, Any] | None = None
     model_config = ConfigDict(populate_by_name=True)
 
 
@@ -30,6 +32,9 @@ class EnterpriseRead(_Base):
     id: str
     name: str
     description: str | None
+    descriptive_payload: dict[str, Any] | None
+    informative_payload: dict[str, Any] | None
+    last_published_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -47,6 +52,8 @@ class SiteUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
     metadata_: dict[str, Any] | None = Field(default=None, alias="metadata")
+    descriptive_payload: dict[str, Any] | None = None
+    informative_payload: dict[str, Any] | None = None
     model_config = ConfigDict(populate_by_name=True)
 
 
@@ -55,6 +62,9 @@ class SiteRead(_Base):
     enterprise_id: str
     name: str
     description: str | None
+    descriptive_payload: dict[str, Any] | None
+    informative_payload: dict[str, Any] | None
+    last_published_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -72,6 +82,8 @@ class AreaUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
     metadata_: dict[str, Any] | None = Field(default=None, alias="metadata")
+    descriptive_payload: dict[str, Any] | None = None
+    informative_payload: dict[str, Any] | None = None
     model_config = ConfigDict(populate_by_name=True)
 
 
@@ -80,6 +92,9 @@ class AreaRead(_Base):
     site_id: str
     name: str
     description: str | None
+    descriptive_payload: dict[str, Any] | None
+    informative_payload: dict[str, Any] | None
+    last_published_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -97,6 +112,8 @@ class LineUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
     metadata_: dict[str, Any] | None = Field(default=None, alias="metadata")
+    descriptive_payload: dict[str, Any] | None = None
+    informative_payload: dict[str, Any] | None = None
     model_config = ConfigDict(populate_by_name=True)
 
 
@@ -105,6 +122,9 @@ class LineRead(_Base):
     area_id: str
     name: str
     description: str | None
+    descriptive_payload: dict[str, Any] | None
+    informative_payload: dict[str, Any] | None
+    last_published_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -122,6 +142,8 @@ class CellUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
     metadata_: dict[str, Any] | None = Field(default=None, alias="metadata")
+    descriptive_payload: dict[str, Any] | None = None
+    informative_payload: dict[str, Any] | None = None
     model_config = ConfigDict(populate_by_name=True)
 
 
@@ -130,6 +152,9 @@ class CellRead(_Base):
     line_id: str
     name: str
     description: str | None
+    descriptive_payload: dict[str, Any] | None
+    informative_payload: dict[str, Any] | None
+    last_published_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -147,6 +172,7 @@ class AssetUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
     descriptive_payload: dict[str, Any] | None = None
+    informative_payload: dict[str, Any] | None = None
     node_type_id: str | None = None
 
 
