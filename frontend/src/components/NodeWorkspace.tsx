@@ -183,7 +183,10 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setEditMode(!editMode)}
+              onClick={() => {
+                if (tab === "_informative") setInfoEditMode(!infoEditMode);
+                else setEditMode(!editMode);
+              }}
               className="flex items-center gap-1.5 px-3 py-2 text-sm border border-border rounded text-ink hover:bg-surface-subtle"
             >
               Edit node
@@ -450,8 +453,34 @@ function getNodePath(enterprise: EnterpriseTree, selected: SelectedNode): string
   return enterprise.name.toLowerCase();
 }
 
-function buildTopic(enterprise: EnterpriseTree, _selected: SelectedNode, name: string): string {
-  return `spBv1/${enterprise.name.toLowerCase().replace(/\s+/g,"_")}/${name.toLowerCase().replace(/\s+/g,"_")}/_descriptive`;
+function buildTopic(enterprise: EnterpriseTree, selected: SelectedNode, _name: string): string {
+  const slug = (s: string) => s.replace(/ /g, "_");
+  const base = [slug(enterprise.name)];
+
+  if (selected.level === "enterprise") return base.join("/") + "/_descriptive";
+
+  for (const site of enterprise.sites) {
+    const path = [...base, slug(site.name)];
+    if (selected.level === "site" && site.id === selected.id) return path.join("/") + "/_descriptive";
+    for (const area of site.areas) {
+      const path2 = [...path, slug(area.name)];
+      if (selected.level === "area" && area.id === selected.id) return path2.join("/") + "/_descriptive";
+      for (const line of area.lines) {
+        const path3 = [...path2, slug(line.name)];
+        if (selected.level === "line" && line.id === selected.id) return path3.join("/") + "/_descriptive";
+        for (const cell of line.cells) {
+          const path4 = [...path3, slug(cell.name)];
+          if (selected.level === "cell" && cell.id === selected.id) return path4.join("/") + "/_descriptive";
+          for (const asset of cell.assets) {
+            if (selected.level === "asset" && asset.id === selected.id) {
+              return [...path4, slug(asset.name)].join("/") + "/_descriptive";
+            }
+          }
+        }
+      }
+    }
+  }
+  return slug(_name) + "/_descriptive";
 }
 
 type NodePayloads = {
