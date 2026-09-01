@@ -27,6 +27,7 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
 
   useEffect(() => {
     if (selected?.level === "asset" && selected.parentIds.cell_id) {
+      setSyncError(null);
       api.assets.list(selected.parentIds.cell_id).then(list => {
         const found = list.find(a => a.id === selected.id);
         if (found) {
@@ -41,6 +42,7 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
     } else {
       setAsset(null);
       setSyncStatus(null);
+      setSyncError(null);
     }
   }, [selected]);
 
@@ -86,6 +88,8 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
     try {
       await api.assets.update(selected.parentIds.cell_id, asset.id, { descriptive_payload: payload });
       await api.assets.publish(selected.parentIds.cell_id, asset.id);
+      const s = await api.syncStatus.get(selected.parentIds.cell_id, asset.id);
+      setSyncStatus(s);
       setPublished(true);
       setTimeout(() => setPublished(false), 3000);
     } finally {
@@ -144,7 +148,7 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
 
         {/* Unsynced banner */}
         {asset && syncStatus && !syncStatus.synced && (
-          <div className="px-6 py-3 bg-danger/10 border-b border-danger/20 flex items-start justify-between gap-4">
+          <div className="-mx-6 px-6 py-3 bg-danger/10 border-b border-danger/20 flex items-start justify-between gap-4">
             <div className="flex items-start gap-2">
               <span className="text-danger text-sm mt-0.5">⚠</span>
               <div>
