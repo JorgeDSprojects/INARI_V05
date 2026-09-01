@@ -76,10 +76,27 @@ services:
       - uns_net
     restart: unless-stopped
 
+  nodered:
+    image: nodered/node-red:latest
+    container_name: uns_nodered
+    environment:
+      TZ: Europe/Madrid
+    ports:
+      - "1880:1880"
+    volumes:
+      - nodered_data:/data
+    depends_on:
+      emqx:
+        condition: service_healthy
+    networks:
+      - uns_net
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   emqx_data:
   emqx_log:
+  nodered_data:
 
 networks:
   uns_net:
