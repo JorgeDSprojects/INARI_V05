@@ -1,5 +1,5 @@
 import axios from "axios";
-import type { Asset, Area, Broker, BrokerStatus, BrokerTestResult, Cell, Enterprise, EnterpriseTree, Line, NodeType, Site, ValidationResult } from "../types/uns";
+import type { Asset, Area, Broker, BrokerStatus, BrokerTestResult, Cell, DataBranch, Enterprise, EnterpriseTree, Line, NodeType, Site, ValidationResult } from "../types/uns";
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -81,5 +81,9 @@ export const api = {
     delete: (id: string) => http.delete(`/node-types/${id}`),
     validate: (id: string, payload: Record<string, unknown>) =>
       http.post<ValidationResult>(`/node-types/${id}/validate`, { payload }).then((r) => r.data),
+  },
+  branches: {
+    list: (cellId: string, assetId: string) =>
+      http.get<DataBranch[]>(`/cells/${cellId}/assets/${assetId}/branches`).then((r) => r.data),
   },
 };

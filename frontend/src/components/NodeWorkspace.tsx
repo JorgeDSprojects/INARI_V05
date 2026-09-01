@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { api } from "../api/client";
-import type { EnterpriseTree, SelectedNode, Asset } from "../types/uns";
+import type { DataBranch, EnterpriseTree, SelectedNode, Asset } from "../types/uns";
 import { JsonEditorPanel } from "./JsonEditorPanel";
 
 interface Props {
@@ -19,6 +19,9 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
   const [published, setPublished] = useState(false);
   const [jsonValid, setJsonValid] = useState(true);
   const [editMode, setEditMode] = useState(false);
+  const [branches, setBranches] = useState<DataBranch[]>([]);
+  const [branchesLoading, setBranchesLoading] = useState(false);
+  const [branchesError, setBranchesError] = useState(false);
 
   useEffect(() => {
     if (selected?.level === "asset" && selected.parentIds.cell_id) {
@@ -30,6 +33,15 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
       setAsset(null);
     }
   }, [selected]);
+
+  useEffect(() => {
+    if (tab !== "branches" || !asset || !selected?.parentIds.cell_id) return;
+    setBranchesLoading(true);
+    setBranchesError(false);
+    api.branches.list(selected.parentIds.cell_id, asset.id)
+      .then(data => { setBranches(data); setBranchesLoading(false); })
+      .catch(() => { setBranchesError(true); setBranchesLoading(false); });
+  }, [tab, asset, selected]);
 
   if (!selected) {
     return (
@@ -73,7 +85,7 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
   const TABS: { id: Tab; label: string; dot?: "success" | "muted" }[] = [
     { id: "definition", label: "Definition" },
     { id: "_descriptive", label: "_descriptive", dot: asset ? "success" : "muted" },
-    { id: "branches", label: "Data branches · 0", dot: "muted" },
+    { id: "branches", label: `Data branches · ${branches.length}`, dot: branches.length > 0 ? "success" : "muted" },
     { id: "_operational", label: "_operational", dot: "muted" },
     { id: "_analytical", label: "_analytical", dot: "muted" },
   ];
@@ -193,9 +205,54 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
           />
         ) : tab === "definition" ? (
           <DefinitionPanel enterprise={enterprise} selected={selected} />
+        ) : tab === "branches" ? (
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-border-subtle bg-surface-subtle">
+              <span className="text-xs text-ink-muted">{branches.length} active subscriber{branches.length !== 1 ? "s" : ""}</span>
+              <button
+                onClick={() => {
+                  if (!asset || !selected?.parentIds.cell_id) return;
+                  setBranchesLoading(true);
+                  api.branches.list(selected.parentIds.cell_id, asset.id)
+                    .then(data => { setBranches(data); setBranchesLoading(false); })
+                    .catch(() => { setBranchesError(true); setBranchesLoading(false); });
+                }}
+                className="text-xs text-ink-muted hover:text-ink border border-border-subtle rounded px-2 py-0.5"
+              >
+                ↺ Refresh
+              </button>
+            </div>
+            {branchesLoading ? (
+              <div className="flex-1 flex items-center justify-center text-ink-muted text-sm">Loading…</div>
+            ) : branchesError ? (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center space-y-1">
+                  <p className="text-warning text-sm">Branch discovery unavailable</p>
+                  <p className="text-ink-muted text-xs">EMQX API unreachable or no broker configured</p>
+                </div>
+              </div>
+            ) : branches.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center text-ink-muted text-sm">
+                No active subscribers on this topic
+              </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto">
+                <div className="grid grid-cols-[1fr_1fr_60px] text-[10px] tracking-widest text-ink-muted px-5 py-2 border-b border-border-subtle bg-surface-subtle">
+                  <span>CLIENT ID</span><span>TOPIC FILTER</span><span>QOS</span>
+                </div>
+                {branches.map((b, i) => (
+                  <div key={i} className="grid grid-cols-[1fr_1fr_60px] px-5 py-3 border-b border-border-subtle hover:bg-surface-subtle text-sm">
+                    <span className="text-ink font-mono text-xs truncate">{b.client_id}</span>
+                    <span className="text-ink-secondary font-mono text-xs truncate">{b.topic_filter}</span>
+                    <span className="text-ink-muted text-xs">QoS {b.qos}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         ) : (
           <div className="flex-1 flex items-center justify-center text-ink-muted text-sm">
-            {tab === "branches" ? "No data branch consumers registered." : `${tab} payload comes from external services at runtime.`}
+            {`${tab} payload comes from external services at runtime.`}
           </div>
         )}
       </div>

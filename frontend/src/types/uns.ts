@@ -121,3 +121,10 @@ export interface ValidationResult {
   valid: boolean;
   errors: string[];
 }
+
+export interface DataBranch {
+  client_id: string;
+  topic_filter: string;
+  qos: number;
+  connected_at: string | null;
+}

@@ -11,6 +11,8 @@ from app.models.uns import Asset, Cell
 from app.schemas.uns import AssetCreate, AssetRead, AssetUpdate
 from app.services.uns_service import build_uns_topic
 from app.services.mqtt_service import publish_descriptive
+from app.models.broker import Broker
+from app.services import broker_service
 
 router = APIRouter(prefix="/cells/{cell_id}/assets", tags=["Assets"])
 
@@ -105,3 +107,21 @@ async def publish_asset(cell_id: str, asset_id: str, db: AsyncSession = Depends(
         await db.commit()
         await db.refresh(obj)
     return obj
+
+
+@router.get("/{asset_id}/branches", response_model=list[dict])
+async def get_asset_branches(cell_id: str, asset_id: str, db: AsyncSession = Depends(get_db)):
+    obj = await db.get(Asset, asset_id)
+    if not obj or obj.cell_id != cell_id:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    if not obj.uns_topic:
+        return []
+
+    # Get first registered broker
+    result = await db.execute(select(Broker).order_by(Broker.label).limit(1))
+    b = result.scalar_one_or_none()
+    if not b:
+        return []
+
+    return await broker_service.get_subscriptions(b, obj.uns_topic)
