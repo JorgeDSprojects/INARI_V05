@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import create_tables
-from app.routers import enterprises, sites, areas, lines, cells, assets, tree
+from app.routers import enterprises, sites, areas, lines, cells, assets, tree, brokers
 from app.services.mqtt_service import disconnect_mqtt
 
 logging.basicConfig(level=logging.INFO)
@@ -41,6 +41,7 @@ app.include_router(lines.router)
 app.include_router(cells.router)
 app.include_router(assets.router)
 app.include_router(tree.router)
+app.include_router(brokers.router)
 
 
 @app.get("/health")
