@@ -9,12 +9,15 @@ interface Props {
   onRefresh: () => void;
 }
 
-type Tab = "definition" | "_descriptive" | "branches" | "_operational" | "_analytical";
+type Tab = "definition" | "_descriptive" | "_informative" | "branches" | "_operational" | "_analytical";
 
 export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
   const [tab, setTab] = useState<Tab>("_descriptive");
   const [asset, setAsset] = useState<Asset | null>(null);
   const [payload, setPayload] = useState<Record<string, unknown>>({});
+  const [infoPayload, setInfoPayload] = useState<Record<string, unknown>>({});
+  const [infoJsonValid, setInfoJsonValid] = useState(true);
+  const [infoEditMode, setInfoEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [published, setPublished] = useState(false);
   const [jsonValid, setJsonValid] = useState(true);
@@ -26,25 +29,41 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
   const [syncError, setSyncError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (selected?.level === "asset" && selected.parentIds.cell_id) {
-      setSyncError(null);
+    // Reset all payload state on node change
+    setPayload({});
+    setInfoPayload({});
+    setEditMode(false);
+    setInfoEditMode(false);
+    setAsset(null);
+    setSyncStatus(null);
+    setSyncError(null);
+    setBranches([]);
+
+    if (!selected) return;
+
+    // Load payloads from the already-loaded tree (works for all levels)
+    const node = findNodeInTree(enterprise, selected);
+    if (node) {
+      setPayload(node.descriptive_payload ?? {});
+      setInfoPayload(node.informative_payload ?? {});
+    }
+
+    // For assets: also fetch the full Asset object from the API
+    // (needed for uns_topic, node_type_id, and sync status)
+    if (selected.level === "asset" && selected.parentIds.cell_id) {
       api.assets.list(selected.parentIds.cell_id).then(list => {
         const found = list.find(a => a.id === selected.id);
         if (found) {
           setAsset(found);
           setPayload(found.descriptive_payload ?? {});
-          // Load sync status
+          setInfoPayload(found.informative_payload ?? {});
           api.syncStatus.get(selected.parentIds.cell_id, found.id)
             .then(setSyncStatus)
             .catch(() => setSyncStatus(null));
         }
       });
-    } else {
-      setAsset(null);
-      setSyncStatus(null);
-      setSyncError(null);
     }
-  }, [selected]);
+  }, [selected, enterprise]);
 
   useEffect(() => {
     if (tab !== "branches" || !asset || !selected?.parentIds.cell_id) return;
@@ -67,47 +86,80 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
   const nodeName = getNodeName(enterprise, selected);
   const nodePath = getNodePath(enterprise, selected);
   const nodeType = selected.level.toUpperCase();
-  const unsTopic = asset?.uns_topic ?? buildTopic(enterprise, selected, nodeName);
 
   const handleSave = async () => {
-    if (!asset || !selected.parentIds.cell_id) return;
+    if (!selected) return;
     setSaving(true);
     try {
-      const updated = await api.assets.update(selected.parentIds.cell_id, asset.id, { descriptive_payload: payload });
-      setAsset(updated);
-      setEditMode(false);
+      const isInfo = tab === "_informative";
+      const body = isInfo
+        ? { informative_payload: infoPayload }
+        : { descriptive_payload: payload };
+      switch (selected.level) {
+        case "enterprise":
+          await api.enterprises.update(selected.id, body); break;
+        case "site":
+          await api.sites.update(selected.parentIds.enterprise_id, selected.id, body); break;
+        case "area":
+          await api.areas.update(selected.parentIds.site_id, selected.id, body); break;
+        case "line":
+          await api.lines.update(selected.parentIds.area_id, selected.id, body); break;
+        case "cell":
+          await api.cells.update(selected.parentIds.line_id, selected.id, body); break;
+        case "asset":
+          await api.assets.update(selected.parentIds.cell_id, selected.id, body); break;
+      }
+      if (isInfo) setInfoEditMode(false); else setEditMode(false);
       onRefresh();
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
   const handlePublish = async () => {
-    if (!asset || !selected.parentIds.cell_id) return;
+    if (!selected) return;
     setSaving(true);
     try {
-      await api.assets.update(selected.parentIds.cell_id, asset.id, { descriptive_payload: payload });
-      await api.assets.publish(selected.parentIds.cell_id, asset.id);
-      const s = await api.syncStatus.get(selected.parentIds.cell_id, asset.id);
-      setSyncStatus(s);
+      const isInfo = tab === "_informative";
+      const body = isInfo
+        ? { informative_payload: infoPayload }
+        : { descriptive_payload: payload };
+      switch (selected.level) {
+        case "enterprise":
+          await api.enterprises.update(selected.id, body);
+          await api.enterprises.publish(selected.id); break;
+        case "site":
+          await api.sites.update(selected.parentIds.enterprise_id, selected.id, body);
+          await api.sites.publish(selected.parentIds.enterprise_id, selected.id); break;
+        case "area":
+          await api.areas.update(selected.parentIds.site_id, selected.id, body);
+          await api.areas.publish(selected.parentIds.site_id, selected.id); break;
+        case "line":
+          await api.lines.update(selected.parentIds.area_id, selected.id, body);
+          await api.lines.publish(selected.parentIds.area_id, selected.id); break;
+        case "cell":
+          await api.cells.update(selected.parentIds.line_id, selected.id, body);
+          await api.cells.publish(selected.parentIds.line_id, selected.id); break;
+        case "asset": {
+          await api.assets.update(selected.parentIds.cell_id, selected.id, body);
+          await api.assets.publish(selected.parentIds.cell_id, selected.id);
+          const s = await api.syncStatus.get(selected.parentIds.cell_id, selected.id);
+          setSyncStatus(s);
+          break;
+        }
+      }
       setPublished(true);
       setTimeout(() => setPublished(false), 3000);
-    } finally {
-      setSaving(false);
-    }
+      onRefresh();
+    } finally { setSaving(false); }
   };
 
   const TABS: { id: Tab; label: string; dot?: "success" | "muted" }[] = [
     { id: "definition", label: "Definition" },
-    { id: "_descriptive", label: "_descriptive", dot: asset ? "success" : "muted" },
+    { id: "_descriptive", label: "_descriptive", dot: Object.keys(payload).length > 0 ? "success" : "muted" },
+    { id: "_informative", label: "_informative", dot: Object.keys(infoPayload).length > 0 ? "success" : "muted" },
     { id: "branches", label: `Data branches · ${branches.length}`, dot: branches.length > 0 ? "success" : "muted" },
     { id: "_operational", label: "_operational", dot: "muted" },
     { id: "_analytical", label: "_analytical", dot: "muted" },
   ];
-
-  const payloadStr = JSON.stringify(payload, null, 2);
-  const lines = payloadStr.split("\n").length;
-  const byteSize = new TextEncoder().encode(payloadStr).length;
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-surface">
@@ -204,37 +256,41 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
         </div>
       </div>
 
-      {/* Meta bar */}
-      {tab === "_descriptive" && (
+      {/* Meta bar — _descriptive and _informative */}
+      {(tab === "_descriptive" || tab === "_informative") && (
         <div className="flex items-center justify-between px-6 py-2.5 bg-surface-subtle border-b border-border-subtle">
           <div className="flex items-center gap-4">
             <span className="flex items-center gap-1 px-2 py-0.5 rounded bg-accent-soft text-accent text-[10px] font-medium">
               ◈ RETAINED
             </span>
             <span className="text-ink-secondary text-xs">application/json</span>
-            <span className="text-ink-muted text-[10px]">{byteSize} BYTES</span>
+            <span className="text-ink-muted text-[10px]">
+              {new TextEncoder().encode(
+                JSON.stringify(tab === "_informative" ? infoPayload : payload, null, 2)
+              ).length} BYTES
+            </span>
           </div>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-1">
-              {jsonValid ? (
+              {(tab === "_informative" ? infoJsonValid : jsonValid) ? (
                 <><span className="text-success text-xs">✓</span><span className="text-success text-xs">Valid JSON</span></>
               ) : (
                 <><span className="text-danger text-xs">✗</span><span className="text-danger text-xs">Invalid JSON</span></>
               )}
             </div>
             <span className="text-ink-muted text-[10px]">POSTGRES REV {asset ? "active" : "–"}</span>
-            {editMode && (
+            {(tab === "_descriptive" ? editMode : infoEditMode) && (
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleSave}
-                  disabled={saving || !jsonValid}
+                  disabled={saving || !(tab === "_informative" ? infoJsonValid : jsonValid)}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-ink text-white text-xs rounded disabled:opacity-50"
                 >
                   SAVE
                 </button>
                 <button
                   onClick={handlePublish}
-                  disabled={saving || !jsonValid}
+                  disabled={saving || !(tab === "_informative" ? infoJsonValid : jsonValid)}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-accent text-white text-xs rounded disabled:opacity-50"
                 >
                   {published ? "PUBLISHED ✓" : "SAVE & PUBLISH"}
@@ -247,16 +303,27 @@ export function NodeWorkspace({ enterprise, selected, onRefresh }: Props) {
 
       {/* Work area */}
       <div className="flex flex-1 overflow-hidden">
-        {tab === "_descriptive" && selected.level === "asset" ? (
+        {tab === "_descriptive" ? (
           <JsonEditorPanel
             payload={payload}
             onChange={setPayload}
             onValidChange={setJsonValid}
-            unsTopic={unsTopic}
+            unsTopic={asset?.uns_topic ?? buildTopic(enterprise, selected, nodeName)}
             asset={asset}
             readOnly={!editMode}
             onEdit={() => setEditMode(true)}
-            lines={lines}
+            lines={JSON.stringify(payload, null, 2).split("\n").length}
+          />
+        ) : tab === "_informative" ? (
+          <JsonEditorPanel
+            payload={infoPayload}
+            onChange={setInfoPayload}
+            onValidChange={setInfoJsonValid}
+            unsTopic={(asset?.uns_topic ?? buildTopic(enterprise, selected, nodeName)).replace("_descriptive", "_informative")}
+            asset={null}
+            readOnly={!infoEditMode}
+            onEdit={() => setInfoEditMode(true)}
+            lines={JSON.stringify(infoPayload, null, 2).split("\n").length}
           />
         ) : tab === "definition" ? (
           <DefinitionPanel enterprise={enterprise} selected={selected} />
@@ -385,4 +452,29 @@ function getNodePath(enterprise: EnterpriseTree, selected: SelectedNode): string
 
 function buildTopic(enterprise: EnterpriseTree, _selected: SelectedNode, name: string): string {
   return `spBv1/${enterprise.name.toLowerCase().replace(/\s+/g,"_")}/${name.toLowerCase().replace(/\s+/g,"_")}/_descriptive`;
+}
+
+type NodePayloads = {
+  descriptive_payload: Record<string, unknown> | null;
+  informative_payload: Record<string, unknown> | null;
+};
+
+function findNodeInTree(enterprise: EnterpriseTree, selected: SelectedNode): NodePayloads | null {
+  if (selected.level === "enterprise" && enterprise.id === selected.id) return enterprise;
+  for (const site of enterprise.sites) {
+    if (selected.level === "site" && site.id === selected.id) return site;
+    for (const area of site.areas) {
+      if (selected.level === "area" && area.id === selected.id) return area;
+      for (const line of area.lines) {
+        if (selected.level === "line" && line.id === selected.id) return line;
+        for (const cell of line.cells) {
+          if (selected.level === "cell" && cell.id === selected.id) return cell;
+          for (const asset of cell.assets) {
+            if (selected.level === "asset" && asset.id === selected.id) return asset;
+          }
+        }
+      }
+    }
+  }
+  return null;
 }
