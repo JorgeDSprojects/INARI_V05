@@ -40,6 +40,28 @@ services:
       - historian_net
     restart: unless-stopped
 
+  ingestor:
+    build:
+      context: ./ingestor
+      dockerfile: Dockerfile
+    container_name: uns_historian_ingestor
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://historian:historianpassword@postgres:5432/uns_historian}
+      EMQX_HOST: ${EMQX_HOST:-emqx}
+      EMQX_PORT: ${EMQX_PORT:-1883}
+      MQTT_TOPIC_FILTER: ${MQTT_TOPIC_FILTER:-#}
+      MQTT_CLIENT_ID: ${MQTT_CLIENT_ID:-uns-historian-ingestor}
+      FLUSH_INTERVAL_SECONDS: ${FLUSH_INTERVAL_SECONDS:-2}
+      FLUSH_MAX_ROWS: ${FLUSH_MAX_ROWS:-500}
+      BUFFER_MAX_ROWS: ${BUFFER_MAX_ROWS:-20000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - historian_net
+      - uns_net
+    restart: unless-stopped
+
 volumes:
   historian_postgres_data:
   historian_pgadmin_data:
@@ -47,3 +69,6 @@ volumes:
 networks:
   historian_net:
     driver: bridge
+  uns_net:
+    external: true
+    name: ${UNS_MANAGER_NETWORK_NAME:-uns_manager_uns_net}
