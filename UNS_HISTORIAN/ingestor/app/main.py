@@ -40,10 +40,18 @@ def _flush_loop(
                 try:
                     inserted = insert_batch(conn, rows)
                     logger.info("Flushed %d row(s)", inserted)
-                except psycopg.Error:
-                    logger.exception("Flush failed, reconnecting and retrying next cycle")
-                    conn.close()
-                    conn = psycopg.connect(settings.database_url, autocommit=False)
+                except Exception:
+                    logger.exception("Flush failed, re-queuing %d row(s) and reconnecting", len(rows))
+                    for row in rows:
+                        buffer.append(row)
+                    try:
+                        conn.close()
+                    except Exception:
+                        logger.exception("Error closing broken connection")
+                    try:
+                        conn = psycopg.connect(settings.database_url, autocommit=False)
+                    except Exception:
+                        logger.exception("Reconnect failed, will retry next cycle")
             dropped = buffer.pop_dropped_count()
             if dropped:
                 logger.warning("Dropped %d oldest row(s): buffer was full", dropped)
