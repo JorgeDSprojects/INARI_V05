@@ -47,39 +47,44 @@ async def update_enterprise(enterprise_id: str, body: EnterpriseUpdate, db: Asyn
     if not obj:
         raise HTTPException(status_code=404, detail="Enterprise not found")
 
-    # Capture old topics before any name change
+    # Capture old state before any changes
     name_changing = body.name is not None and body.name != obj.name
     if name_changing:
         old_desc = build_enterprise_topic(obj, "_descriptive")
         old_info = build_enterprise_topic(obj, "_informative")
+    old_desc_payload = obj.descriptive_payload
+    old_info_payload = obj.informative_payload
 
     for field, value in body.model_dump(exclude_unset=True, by_alias=False).items():
         setattr(obj, field, value)
     await db.commit()
     await db.refresh(obj)
 
-    # Clear old retained messages after rename
+    # Clear retained after rename (old topics)
     if name_changing:
-        try:
-            clear_retained(old_desc)
-        except Exception:
-            pass
-        try:
-            clear_retained(old_info)
-        except Exception:
-            pass
+        try: clear_retained(old_desc)
+        except Exception: pass
+        try: clear_retained(old_info)
+        except Exception: pass
 
-    # Auto-publish if payloads exist (sync on save)
-    if obj.descriptive_payload:
-        try:
-            publish_descriptive(build_enterprise_topic(obj, "_descriptive"), obj.descriptive_payload)
-        except Exception:
-            pass
-    if obj.informative_payload:
-        try:
-            publish_descriptive(build_enterprise_topic(obj, "_informative"), obj.informative_payload)
-        except Exception:
-            pass
+    # Sync payloads: publish if data, clear retained if payload was removed
+    desc_topic = build_enterprise_topic(obj, "_descriptive")
+    info_topic = build_enterprise_topic(obj, "_informative")
+
+    if old_desc_payload and not obj.descriptive_payload:
+        try: clear_retained(desc_topic)
+        except Exception: pass
+    elif obj.descriptive_payload:
+        try: publish_descriptive(desc_topic, obj.descriptive_payload)
+        except Exception: pass
+
+    if old_info_payload and not obj.informative_payload:
+        try: clear_retained(info_topic)
+        except Exception: pass
+    elif obj.informative_payload:
+        try: publish_descriptive(info_topic, obj.informative_payload)
+        except Exception: pass
+
     if obj.descriptive_payload or obj.informative_payload:
         obj.last_published_at = datetime.now(timezone.utc)
         await db.commit()

@@ -68,6 +68,8 @@ async def update_asset(cell_id: str, asset_id: str, body: AssetUpdate, db: Async
 
     name_changing = body.name is not None and body.name != obj.name
     old_topic = obj.uns_topic if name_changing else None
+    old_desc_payload = obj.descriptive_payload
+    old_info_payload = obj.informative_payload
 
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(obj, field, value)
@@ -79,25 +81,28 @@ async def update_asset(cell_id: str, asset_id: str, body: AssetUpdate, db: Async
     await db.refresh(obj)
 
     if name_changing and old_topic:
-        try:
-            clear_retained(old_topic)
-        except Exception:
-            pass
-        try:
-            clear_retained(old_topic.replace("_descriptive", "_informative"))
-        except Exception:
-            pass
+        try: clear_retained(old_topic)
+        except Exception: pass
+        try: clear_retained(old_topic.replace("_descriptive", "_informative"))
+        except Exception: pass
 
-    if obj.descriptive_payload:
-        try:
-            publish_descriptive(await build_uns_topic(obj, db, "_descriptive"), obj.descriptive_payload)
-        except Exception:
-            pass
-    if obj.informative_payload:
-        try:
-            publish_descriptive(await build_uns_topic(obj, db, "_informative"), obj.informative_payload)
-        except Exception:
-            pass
+    desc_topic = await build_uns_topic(obj, db, "_descriptive")
+    info_topic = await build_uns_topic(obj, db, "_informative")
+
+    if old_desc_payload and not obj.descriptive_payload:
+        try: clear_retained(desc_topic)
+        except Exception: pass
+    elif obj.descriptive_payload:
+        try: publish_descriptive(desc_topic, obj.descriptive_payload)
+        except Exception: pass
+
+    if old_info_payload and not obj.informative_payload:
+        try: clear_retained(info_topic)
+        except Exception: pass
+    elif obj.informative_payload:
+        try: publish_descriptive(info_topic, obj.informative_payload)
+        except Exception: pass
+
     if obj.descriptive_payload or obj.informative_payload:
         obj.last_published_at = datetime.now(timezone.utc)
         await db.commit()

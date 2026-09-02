@@ -49,6 +49,8 @@ async def update_line(area_id: str, line_id: str, body: LineUpdate, db: AsyncSes
     if name_changing:
         old_desc = await build_line_topic(obj, db, "_descriptive")
         old_info = await build_line_topic(obj, db, "_informative")
+    old_desc_payload = obj.descriptive_payload
+    old_info_payload = obj.informative_payload
 
     for field, value in body.model_dump(exclude_unset=True, by_alias=False).items():
         setattr(obj, field, value)
@@ -56,25 +58,28 @@ async def update_line(area_id: str, line_id: str, body: LineUpdate, db: AsyncSes
     await db.refresh(obj)
 
     if name_changing:
-        try:
-            clear_retained(old_desc)
-        except Exception:
-            pass
-        try:
-            clear_retained(old_info)
-        except Exception:
-            pass
+        try: clear_retained(old_desc)
+        except Exception: pass
+        try: clear_retained(old_info)
+        except Exception: pass
 
-    if obj.descriptive_payload:
-        try:
-            publish_descriptive(await build_line_topic(obj, db, "_descriptive"), obj.descriptive_payload)
-        except Exception:
-            pass
-    if obj.informative_payload:
-        try:
-            publish_descriptive(await build_line_topic(obj, db, "_informative"), obj.informative_payload)
-        except Exception:
-            pass
+    desc_topic = await build_line_topic(obj, db, "_descriptive")
+    info_topic = await build_line_topic(obj, db, "_informative")
+
+    if old_desc_payload and not obj.descriptive_payload:
+        try: clear_retained(desc_topic)
+        except Exception: pass
+    elif obj.descriptive_payload:
+        try: publish_descriptive(desc_topic, obj.descriptive_payload)
+        except Exception: pass
+
+    if old_info_payload and not obj.informative_payload:
+        try: clear_retained(info_topic)
+        except Exception: pass
+    elif obj.informative_payload:
+        try: publish_descriptive(info_topic, obj.informative_payload)
+        except Exception: pass
+
     if obj.descriptive_payload or obj.informative_payload:
         obj.last_published_at = datetime.now(timezone.utc)
         await db.commit()
