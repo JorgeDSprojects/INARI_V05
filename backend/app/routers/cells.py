@@ -6,9 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.database import get_db
-from app.models.uns import Cell, Line
+from app.models.uns import Cell, Line, Area, Site, Enterprise
 from app.schemas.uns import CellCreate, CellRead, CellUpdate
-from app.services.uns_service import build_cell_topic
+from app.services.uns_service import build_cell_topic, clear_subtree_retained
 from app.services.mqtt_service import publish_descriptive, clear_retained
 
 router = APIRouter(prefix="/lines/{line_id}/cells", tags=["Cells"])
@@ -114,13 +114,21 @@ async def delete_cell(line_id: str, cell_id: str, db: AsyncSession = Depends(get
     obj = await db.get(Cell, cell_id)
     if not obj or obj.line_id != line_id:
         raise HTTPException(status_code=404, detail="Cell not found")
-    try:
-        clear_retained(await build_cell_topic(obj, db, "_descriptive"))
-    except Exception:
-        pass
-    try:
-        clear_retained(await build_cell_topic(obj, db, "_informative"))
-    except Exception:
-        pass
+    try: clear_retained(await build_cell_topic(obj, db, "_descriptive"))
+    except Exception: pass
+    try: clear_retained(await build_cell_topic(obj, db, "_informative"))
+    except Exception: pass
+    # Clear all children's retained topics (assets)
+    slug = lambda s: s.replace(" ", "_")
+    line = await db.get(Line, obj.line_id)
+    if line:
+        area = await db.get(Area, line.area_id)
+        if area:
+            site = await db.get(Site, area.site_id)
+            if site:
+                ent = await db.get(Enterprise, site.enterprise_id)
+                if ent:
+                    topic_prefix = f"{slug(ent.name)}/{slug(site.name)}/{slug(area.name)}/{slug(line.name)}/{slug(obj.name)}"
+                    await clear_subtree_retained(topic_prefix, db)
     await db.delete(obj)
     await db.commit()

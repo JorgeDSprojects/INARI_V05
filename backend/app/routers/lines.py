@@ -6,9 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.database import get_db
-from app.models.uns import Line, Area
+from app.models.uns import Line, Area, Site, Enterprise
 from app.schemas.uns import LineCreate, LineRead, LineUpdate
-from app.services.uns_service import build_line_topic
+from app.services.uns_service import build_line_topic, clear_subtree_retained
 from app.services.mqtt_service import publish_descriptive, clear_retained
 
 router = APIRouter(prefix="/areas/{area_id}/lines", tags=["Lines"])
@@ -114,13 +114,19 @@ async def delete_line(area_id: str, line_id: str, db: AsyncSession = Depends(get
     obj = await db.get(Line, line_id)
     if not obj or obj.area_id != area_id:
         raise HTTPException(status_code=404, detail="Line not found")
-    try:
-        clear_retained(await build_line_topic(obj, db, "_descriptive"))
-    except Exception:
-        pass
-    try:
-        clear_retained(await build_line_topic(obj, db, "_informative"))
-    except Exception:
-        pass
+    try: clear_retained(await build_line_topic(obj, db, "_descriptive"))
+    except Exception: pass
+    try: clear_retained(await build_line_topic(obj, db, "_informative"))
+    except Exception: pass
+    # Clear all children's retained topics (cells, assets)
+    slug = lambda s: s.replace(" ", "_")
+    area = await db.get(Area, obj.area_id)
+    if area:
+        site = await db.get(Site, area.site_id)
+        if site:
+            ent = await db.get(Enterprise, site.enterprise_id)
+            if ent:
+                topic_prefix = f"{slug(ent.name)}/{slug(site.name)}/{slug(area.name)}/{slug(obj.name)}"
+                await clear_subtree_retained(topic_prefix, db)
     await db.delete(obj)
     await db.commit()

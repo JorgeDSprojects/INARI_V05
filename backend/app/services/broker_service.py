@@ -103,6 +103,37 @@ async def get_subscriptions(broker: Broker, topic: str) -> list[dict[str, Any]]:
         return []
 
 
+async def list_retained_topics_by_prefix(broker: Broker, prefix: str) -> list[str]:
+    """List all retained MQTT topics whose path starts with *prefix* (i.e. prefix/#).
+    Uses EMQX retainer API. Returns [] on any error."""
+    filter_topic = f"{prefix}/#"
+    topics: list[str] = []
+    page = 1
+    while True:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(
+                    f"{_api_base(broker)}/retainer/messages",
+                    params={"topic": filter_topic, "page": page, "limit": 1000},
+                    auth=_auth(broker),
+                )
+                if r.status_code != 200:
+                    break
+                data = r.json()
+                items: list[Any] = data.get("data", data) if isinstance(data, dict) else data
+                if not items:
+                    break
+                for item in items:
+                    if t := item.get("topic"):
+                        topics.append(t)
+                if len(items) < 1000:
+                    break
+                page += 1
+        except Exception:
+            break
+    return topics
+
+
 async def get_retained_payload(broker: Broker, topic: str) -> dict[str, Any] | None:
     """Fetch retained message payload from EMQX. Returns None if not found or error."""
     try:

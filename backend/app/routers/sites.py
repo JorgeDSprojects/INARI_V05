@@ -8,7 +8,7 @@ from sqlalchemy.future import select
 from app.database import get_db
 from app.models.uns import Site, Enterprise
 from app.schemas.uns import SiteCreate, SiteRead, SiteUpdate
-from app.services.uns_service import build_site_topic
+from app.services.uns_service import build_site_topic, clear_subtree_retained
 from app.services.mqtt_service import publish_descriptive, clear_retained
 
 router = APIRouter(prefix="/enterprises/{enterprise_id}/sites", tags=["Sites"])
@@ -114,13 +114,16 @@ async def delete_site(enterprise_id: str, site_id: str, db: AsyncSession = Depen
     obj = await db.get(Site, site_id)
     if not obj or obj.enterprise_id != enterprise_id:
         raise HTTPException(status_code=404, detail="Site not found")
-    try:
-        clear_retained(await build_site_topic(obj, db, "_descriptive"))
-    except Exception:
-        pass
-    try:
-        clear_retained(await build_site_topic(obj, db, "_informative"))
-    except Exception:
-        pass
+    # Clear site-level retained topics
+    try: clear_retained(await build_site_topic(obj, db, "_descriptive"))
+    except Exception: pass
+    try: clear_retained(await build_site_topic(obj, db, "_informative"))
+    except Exception: pass
+    # Clear all children's retained topics (areas, lines, cells, assets)
+    ent = await db.get(Enterprise, obj.enterprise_id)
+    if ent:
+        slug = lambda s: s.replace(" ", "_")
+        topic_prefix = f"{slug(ent.name)}/{slug(obj.name)}"
+        await clear_subtree_retained(topic_prefix, db)
     await db.delete(obj)
     await db.commit()

@@ -6,9 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.database import get_db
-from app.models.uns import Area, Site
+from app.models.uns import Area, Site, Enterprise
 from app.schemas.uns import AreaCreate, AreaRead, AreaUpdate
-from app.services.uns_service import build_area_topic
+from app.services.uns_service import build_area_topic, clear_subtree_retained
 from app.services.mqtt_service import publish_descriptive, clear_retained
 
 router = APIRouter(prefix="/sites/{site_id}/areas", tags=["Areas"])
@@ -114,13 +114,17 @@ async def delete_area(site_id: str, area_id: str, db: AsyncSession = Depends(get
     obj = await db.get(Area, area_id)
     if not obj or obj.site_id != site_id:
         raise HTTPException(status_code=404, detail="Area not found")
-    try:
-        clear_retained(await build_area_topic(obj, db, "_descriptive"))
-    except Exception:
-        pass
-    try:
-        clear_retained(await build_area_topic(obj, db, "_informative"))
-    except Exception:
-        pass
+    try: clear_retained(await build_area_topic(obj, db, "_descriptive"))
+    except Exception: pass
+    try: clear_retained(await build_area_topic(obj, db, "_informative"))
+    except Exception: pass
+    # Clear all children's retained topics (lines, cells, assets)
+    slug = lambda s: s.replace(" ", "_")
+    site = await db.get(Site, obj.site_id)
+    if site:
+        ent = await db.get(Enterprise, site.enterprise_id)
+        if ent:
+            topic_prefix = f"{slug(ent.name)}/{slug(site.name)}/{slug(obj.name)}"
+            await clear_subtree_retained(topic_prefix, db)
     await db.delete(obj)
     await db.commit()

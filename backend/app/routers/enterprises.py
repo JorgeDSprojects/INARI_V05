@@ -8,7 +8,7 @@ from sqlalchemy.future import select
 from app.database import get_db
 from app.models.uns import Enterprise
 from app.schemas.uns import EnterpriseCreate, EnterpriseRead, EnterpriseUpdate
-from app.services.uns_service import build_enterprise_topic
+from app.services.uns_service import build_enterprise_topic, clear_subtree_retained
 from app.services.mqtt_service import publish_descriptive, clear_retained
 
 router = APIRouter(prefix="/enterprises", tags=["Enterprises"])
@@ -119,13 +119,13 @@ async def delete_enterprise(enterprise_id: str, db: AsyncSession = Depends(get_d
     obj = await db.get(Enterprise, enterprise_id)
     if not obj:
         raise HTTPException(status_code=404, detail="Enterprise not found")
-    try:
-        clear_retained(build_enterprise_topic(obj, "_descriptive"))
-    except Exception:
-        pass
-    try:
-        clear_retained(build_enterprise_topic(obj, "_informative"))
-    except Exception:
-        pass
+    # Clear enterprise-level retained topics
+    try: clear_retained(build_enterprise_topic(obj, "_descriptive"))
+    except Exception: pass
+    try: clear_retained(build_enterprise_topic(obj, "_informative"))
+    except Exception: pass
+    # Clear all children's retained topics (sites, areas, lines, cells, assets)
+    topic_prefix = obj.name.replace(" ", "_")
+    await clear_subtree_retained(topic_prefix, db)
     await db.delete(obj)
     await db.commit()

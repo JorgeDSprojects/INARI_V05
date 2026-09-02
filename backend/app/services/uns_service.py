@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 
 from app.models.uns import Asset, Cell, Line, Area, Site, Enterprise
 
@@ -53,3 +54,30 @@ async def build_site_topic(site: Site, db: AsyncSession, suffix: str = "_descrip
 def build_enterprise_topic(enterprise: Enterprise, suffix: str = "_descriptive") -> str:
     parts = [enterprise.name, suffix]
     return "/".join(_slug(p) for p in parts)
+
+
+async def clear_subtree_retained(topic_prefix: str, db: AsyncSession) -> None:
+    """Clear all retained MQTT messages under *topic_prefix* using the EMQX REST API.
+
+    Queries EMQX for every retained topic matching ``topic_prefix/#``, then
+    publishes an empty payload (retain=True) on each one so that connected
+    clients (e.g. MQTT Explorer) receive the deletion notification.
+
+    Falls back silently if no broker is configured or the API is unreachable.
+    """
+    from app.models.broker import Broker
+    from app.services.broker_service import list_retained_topics_by_prefix
+    from app.services.mqtt_service import clear_retained
+
+    # Get the first configured broker (same as existing publish logic)
+    result = await db.execute(select(Broker).order_by(Broker.label).limit(1))
+    broker = result.scalar_one_or_none()
+    if not broker:
+        return
+
+    topics = await list_retained_topics_by_prefix(broker, topic_prefix)
+    for t in topics:
+        try:
+            clear_retained(t)
+        except Exception:
+            pass
