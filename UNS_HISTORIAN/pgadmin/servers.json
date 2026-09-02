@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "UNS Historian",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "uns_historian",
+      "Username": "historian",
+      "SSLMode": "prefer"
+    }
+  }
+}

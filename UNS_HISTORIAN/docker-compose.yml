@@ -1,0 +1,49 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: uns_historian_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-historian}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-historianpassword}
+      POSTGRES_DB: ${POSTGRES_DB:-uns_historian}
+    volumes:
+      - historian_postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "${POSTGRES_PORT:-5434}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-historian} -d ${POSTGRES_DB:-uns_historian}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - historian_net
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: uns_historian_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@uns-historian.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-pgadminpassword}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    volumes:
+      - historian_pgadmin_data:/var/lib/pgadmin
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+    ports:
+      - "${PGADMIN_PORT:-5051}:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - historian_net
+    restart: unless-stopped
+
+volumes:
+  historian_postgres_data:
+  historian_pgadmin_data:
+
+networks:
+  historian_net:
+    driver: bridge
