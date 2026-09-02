@@ -49,7 +49,7 @@ def _flush_loop(
     buffer: FlushBuffer,
 ) -> None:
     conn = psycopg.connect(settings.database_url, autocommit=False)
-    consecutive_failures = 0
+    consecutive_data_failures = 0
     try:
         while not stop_event.is_set():
             flush_requested.wait(settings.flush_interval_seconds)
@@ -59,32 +59,47 @@ def _flush_loop(
                 try:
                     inserted = insert_batch(conn, rows)
                     logger.info("Flushed %d row(s)", inserted)
-                    consecutive_failures = 0
-                except Exception:
-                    consecutive_failures += 1
+                    consecutive_data_failures = 0
+                except psycopg.OperationalError:
                     logger.exception(
-                        "Batch flush failed (%d consecutive), reconnecting", consecutive_failures
+                        "Batch flush failed (connection error), re-queuing %d row(s) and reconnecting",
+                        len(rows),
+                    )
+                    conn = _reconnect(settings, conn)
+                    for row in rows:
+                        buffer.append(row)
+                except Exception:
+                    consecutive_data_failures += 1
+                    logger.exception(
+                        "Batch flush failed (%d consecutive data error(s)), reconnecting",
+                        consecutive_data_failures,
                     )
                     conn = _reconnect(settings, conn)
 
-                    if consecutive_failures < POISON_PILL_THRESHOLD:
+                    if consecutive_data_failures < POISON_PILL_THRESHOLD:
                         for row in rows:
                             buffer.append(row)
                     else:
                         logger.warning(
                             "Falling back to row-by-row insert after %d consecutive "
-                            "batch failures to isolate a possible poison-pill row",
-                            consecutive_failures,
+                            "data error(s) to isolate a possible poison-pill row",
+                            consecutive_data_failures,
                         )
                         for row in rows:
                             try:
                                 insert_batch(conn, [row])
+                            except psycopg.OperationalError:
+                                logger.exception(
+                                    "Connection error during row-by-row insert, re-queuing row"
+                                )
+                                conn = _reconnect(settings, conn)
+                                buffer.append(row)
                             except Exception:
                                 logger.exception(
                                     "Dropping row that fails individually: topic=%s", row[1]
                                 )
                                 conn = _reconnect(settings, conn)
-                        consecutive_failures = 0
+                        consecutive_data_failures = 0
             dropped = buffer.pop_dropped_count()
             if dropped:
                 logger.warning("Dropped %d oldest row(s): buffer was full", dropped)

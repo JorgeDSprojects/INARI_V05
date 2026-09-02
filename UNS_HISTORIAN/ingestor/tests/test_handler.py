@@ -26,6 +26,19 @@ def test_duplicate_reading_is_not_buffered():
     assert buffer.drain() == []
 
 
+def test_single_reading_replay_is_deduplicated_against_warm_started_cache():
+    """Regression test: DedupCache seeded from db.load_last_values() holds
+    bare payloads (matching the DB's flat per-row storage), not
+    list-wrapped ones. A single-reading message's comparable must match
+    that bare shape so a post-restart replay of an unchanged single-object
+    topic is still correctly deduplicated."""
+    cache = DedupCache(initial={"t/1": {"value": 1}})
+    buffer = FlushBuffer(max_rows=10)
+    stored = handle_message("t/1", b'{"value": 1}', 1, True, ARRIVAL, cache, buffer)
+    assert stored == 0
+    assert buffer.drain() == []
+
+
 def test_list_payload_splits_into_multiple_rows_on_first_delivery():
     cache = DedupCache()
     buffer = FlushBuffer(max_rows=10)

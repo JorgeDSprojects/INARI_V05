@@ -30,10 +30,16 @@ def handle_message(
     instead of collapsing to zero on an unchanged replay. Returns the number
     of rows appended to `buffer` (0 if the whole message was a duplicate)."""
     readings = parse_message(raw, arrival_time)
-    message_comparable: Any = [
+    values = [
         reading.payload if reading.payload is not None else reading.raw_payload
         for reading in readings
     ]
+    # A single-reading message compares as a bare value (matching the shape
+    # db.load_last_values seeds from flat per-row storage, so a warm-started
+    # cache still correctly deduplicates a post-restart replay of the common
+    # single-object case). Only a genuine multi-reading (list-payload)
+    # message compares as the whole ordered list — see I1's fix above.
+    message_comparable: Any = values[0] if len(values) == 1 else values
     if not cache.should_store(topic, message_comparable):
         return 0
     for reading in readings:
