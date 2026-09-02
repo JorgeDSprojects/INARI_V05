@@ -48,3 +48,15 @@ def test_object_with_unparseable_timestamp_falls_back_to_arrival_time():
     readings = parse_message(raw, ARRIVAL)
     assert readings[0].time == ARRIVAL
     assert readings[0].payload["timestamp"] == "not-a-date"
+
+
+def test_literal_nul_byte_is_stripped_from_raw_payload():
+    raw = b"bad\x00text"
+    readings = parse_message(raw, ARRIVAL)
+    assert readings == [Reading(time=ARRIVAL, payload=None, raw_payload="badtext")]
+
+
+def test_escaped_nul_in_json_string_value_is_stripped():
+    raw = b'{"a": "x\\u0000y"}'
+    readings = parse_message(raw, ARRIVAL)
+    assert readings[0].payload == {"a": "xy"}

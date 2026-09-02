@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   postgres:
     image: timescale/timescaledb:latest-pg16
@@ -45,8 +43,9 @@ services:
       context: ./ingestor
       dockerfile: Dockerfile
     container_name: uns_historian_ingestor
+    init: true
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://historian:historianpassword@postgres:5432/uns_historian}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-historian}:${POSTGRES_PASSWORD:-historianpassword}@postgres:5432/${POSTGRES_DB:-uns_historian}}
       EMQX_HOST: ${EMQX_HOST:-emqx}
       EMQX_PORT: ${EMQX_PORT:-1883}
       MQTT_TOPIC_FILTER: ${MQTT_TOPIC_FILTER:-#}

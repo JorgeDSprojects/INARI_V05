@@ -17,6 +17,19 @@ class Reading:
     raw_payload: str | None
 
 
+def _strip_nul(value: Any) -> Any:
+    """Recursively remove NUL characters — PostgreSQL rejects a literal NUL
+    byte in both TEXT and JSONB columns, and a JSON \\u0000 escape decodes to
+    one after json.loads."""
+    if isinstance(value, str):
+        return value.replace("\x00", "")
+    if isinstance(value, dict):
+        return {key: _strip_nul(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_strip_nul(item) for item in value]
+    return value
+
+
 def _extract_time(value: Any, arrival_time: datetime) -> datetime:
     """Use the object's own top-level 'timestamp' key when present and parseable."""
     if isinstance(value, dict) and isinstance(value.get("timestamp"), str):
@@ -41,12 +54,14 @@ def parse_message(raw: bytes, arrival_time: datetime) -> list[Reading]:
     if not raw:
         return [Reading(time=arrival_time, payload=None, raw_payload=None)]
 
-    text = raw.decode("utf-8", errors="replace")
+    text = raw.decode("utf-8", errors="replace").replace("\x00", "")
 
     try:
         parsed = json.loads(text)
     except (json.JSONDecodeError, ValueError):
         return [Reading(time=arrival_time, payload=None, raw_payload=text)]
+
+    parsed = _strip_nul(parsed)
 
     if isinstance(parsed, list):
         return [

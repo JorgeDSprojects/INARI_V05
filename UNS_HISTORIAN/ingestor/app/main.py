@@ -1,4 +1,3 @@
-# UNS_HISTORIAN/ingestor/app/main.py
 """Entrypoint: connects to Postgres and EMQX, warms the dedup cache, subscribes
 to MQTT_TOPIC_FILTER, and flushes buffered rows every FLUSH_INTERVAL_SECONDS
 or as soon as the buffer reaches FLUSH_MAX_ROWS, whichever comes first.
@@ -8,6 +7,7 @@ See docs/superpowers/specs/2026-09-02-uns-historian-design.md, Section 3.
 from __future__ import annotations
 
 import logging
+import signal
 import threading
 from datetime import datetime, timezone
 
@@ -23,6 +23,24 @@ from app.handler import handle_message
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("uns_historian.ingestor")
 
+POISON_PILL_THRESHOLD = 3
+
+
+def _reconnect(settings: Settings, old_conn: psycopg.Connection) -> psycopg.Connection:
+    """Close the broken connection and open a fresh one. Never raises — on
+    failure, logs and returns the (still broken) old connection so the next
+    insert attempt fails fast and triggers another retry, instead of this
+    function's caller crashing the flush loop."""
+    try:
+        old_conn.close()
+    except Exception:
+        logger.exception("Error closing broken connection")
+    try:
+        return psycopg.connect(settings.database_url, autocommit=False)
+    except Exception:
+        logger.exception("Reconnect failed, will retry next cycle")
+        return old_conn
+
 
 def _flush_loop(
     stop_event: threading.Event,
@@ -31,6 +49,7 @@ def _flush_loop(
     buffer: FlushBuffer,
 ) -> None:
     conn = psycopg.connect(settings.database_url, autocommit=False)
+    consecutive_failures = 0
     try:
         while not stop_event.is_set():
             flush_requested.wait(settings.flush_interval_seconds)
@@ -40,22 +59,43 @@ def _flush_loop(
                 try:
                     inserted = insert_batch(conn, rows)
                     logger.info("Flushed %d row(s)", inserted)
+                    consecutive_failures = 0
                 except Exception:
-                    logger.exception("Flush failed, re-queuing %d row(s) and reconnecting", len(rows))
-                    for row in rows:
-                        buffer.append(row)
-                    try:
-                        conn.close()
-                    except Exception:
-                        logger.exception("Error closing broken connection")
-                    try:
-                        conn = psycopg.connect(settings.database_url, autocommit=False)
-                    except Exception:
-                        logger.exception("Reconnect failed, will retry next cycle")
+                    consecutive_failures += 1
+                    logger.exception(
+                        "Batch flush failed (%d consecutive), reconnecting", consecutive_failures
+                    )
+                    conn = _reconnect(settings, conn)
+
+                    if consecutive_failures < POISON_PILL_THRESHOLD:
+                        for row in rows:
+                            buffer.append(row)
+                    else:
+                        logger.warning(
+                            "Falling back to row-by-row insert after %d consecutive "
+                            "batch failures to isolate a possible poison-pill row",
+                            consecutive_failures,
+                        )
+                        for row in rows:
+                            try:
+                                insert_batch(conn, [row])
+                            except Exception:
+                                logger.exception(
+                                    "Dropping row that fails individually: topic=%s", row[1]
+                                )
+                                conn = _reconnect(settings, conn)
+                        consecutive_failures = 0
             dropped = buffer.pop_dropped_count()
             if dropped:
                 logger.warning("Dropped %d oldest row(s): buffer was full", dropped)
     finally:
+        rows = buffer.drain()
+        if rows:
+            try:
+                insert_batch(conn, rows)
+                logger.info("Flushed %d row(s) on shutdown", len(rows))
+            except Exception:
+                logger.exception("Final shutdown flush failed, %d row(s) lost", len(rows))
         conn.close()
 
 
@@ -110,11 +150,20 @@ def main() -> None:
     client.on_message = on_message
     client.reconnect_delay_set(min_delay=1, max_delay=30)
 
-    client.connect(settings.emqx_host, settings.emqx_port, keepalive=60)
+    def _handle_sigterm(signum, frame):
+        logger.info("Received SIGTERM, shutting down")
+        stop_event.set()
+        flush_requested.set()
+        client.disconnect()
+
+    signal.signal(signal.SIGTERM, _handle_sigterm)
+
     try:
+        client.connect(settings.emqx_host, settings.emqx_port, keepalive=60)
         client.loop_forever()
     finally:
         stop_event.set()
+        flush_requested.set()
         flush_thread.join(timeout=settings.flush_interval_seconds + 5)
 
 
