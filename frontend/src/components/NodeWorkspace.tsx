@@ -33,6 +33,8 @@ export function NodeWorkspace({ enterprise, selected, onRefresh, onDelete }: Pro
   const [descValue, setDescValue] = useState("");
   const [nameSaving, setNameSaving] = useState(false);
   const [nameSaved, setNameSaved] = useState(false);
+  const [payloadSaved, setPayloadSaved] = useState(false);
+  const [payloadError, setPayloadError] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -137,6 +139,7 @@ export function NodeWorkspace({ enterprise, selected, onRefresh, onDelete }: Pro
   const handleSave = async () => {
     if (!selected) return;
     setSaving(true);
+    setPayloadError(null);
     try {
       const isInfo = tab === "_informative";
       const body = isInfo
@@ -157,13 +160,19 @@ export function NodeWorkspace({ enterprise, selected, onRefresh, onDelete }: Pro
           await api.assets.update(selected.parentIds.cell_id, selected.id, body); break;
       }
       if (isInfo) setInfoEditMode(false); else setEditMode(false);
+      setPayloadSaved(true);
+      setTimeout(() => setPayloadSaved(false), 3000);
       onRefresh();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Save failed";
+      setPayloadError(msg);
     } finally { setSaving(false); }
   };
 
   const handlePublish = async () => {
     if (!selected) return;
     setSaving(true);
+    setPayloadError(null);
     try {
       const isInfo = tab === "_informative";
       const body = isInfo
@@ -193,9 +202,13 @@ export function NodeWorkspace({ enterprise, selected, onRefresh, onDelete }: Pro
           break;
         }
       }
+      if (tab === "_informative") setInfoEditMode(false); else setEditMode(false);
       setPublished(true);
       setTimeout(() => setPublished(false), 3000);
       onRefresh();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Publish failed";
+      setPayloadError(msg);
     } finally { setSaving(false); }
   };
 
@@ -332,6 +345,12 @@ export function NodeWorkspace({ enterprise, selected, onRefresh, onDelete }: Pro
               )}
             </div>
             <span className="text-ink-muted text-[10px]">POSTGRES REV {asset ? "active" : "–"}</span>
+            {payloadSaved && !saving && (
+              <span className="text-success text-xs font-medium">Saved ✓</span>
+            )}
+            {payloadError && (
+              <span className="text-danger text-xs font-medium" title={payloadError}>Error: {payloadError.slice(0, 40)}</span>
+            )}
             {(tab === "_descriptive" ? editMode : infoEditMode) && (
               <div className="flex items-center gap-2">
                 <button
@@ -339,14 +358,14 @@ export function NodeWorkspace({ enterprise, selected, onRefresh, onDelete }: Pro
                   disabled={saving || !(tab === "_informative" ? infoJsonValid : jsonValid)}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-ink text-white text-xs rounded disabled:opacity-50"
                 >
-                  SAVE
+                  {saving ? "SAVING…" : "SAVE"}
                 </button>
                 <button
                   onClick={handlePublish}
                   disabled={saving || !(tab === "_informative" ? infoJsonValid : jsonValid)}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-accent text-white text-xs rounded disabled:opacity-50"
                 >
-                  {published ? "PUBLISHED ✓" : "SAVE & PUBLISH"}
+                  {published ? "PUBLISHED ✓" : saving ? "…" : "SAVE & PUBLISH"}
                 </button>
               </div>
             )}
@@ -464,8 +483,8 @@ export function NodeWorkspace({ enterprise, selected, onRefresh, onDelete }: Pro
                       Delete «{nodeName}»?
                     </p>
                     <p className="text-xs text-ink-muted">
-                      This removes the node and all its children from the database.
-                      Retained MQTT messages are NOT automatically cleared from the broker.
+                      This removes the node from the database and clears its retained MQTT messages.
+                      Child nodes' retained messages may need manual cleanup in the broker.
                     </p>
                     <div className="flex items-center gap-2">
                       <button
@@ -601,6 +620,7 @@ function LevelBreadcrumb({ enterprise, selected }: { enterprise: EnterpriseTree;
 }
 
 function getNodeName(enterprise: EnterpriseTree, selected: SelectedNode): string {
+  if (selected.level === "enterprise") return enterprise.name;
   for (const s of enterprise.sites) {
     if (selected.level === "site" && s.id === selected.id) return s.name;
     for (const a of s.areas) {
