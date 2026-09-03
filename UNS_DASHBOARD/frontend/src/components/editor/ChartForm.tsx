@@ -18,6 +18,8 @@ export function ChartForm({
   const [dataMode, setDataMode] = useState<DataMode>("live");
   const [rangeType, setRangeType] = useState<HistoricalRangeType>("relative");
   const [relativeRule, setRelativeRule] = useState<RelativeRule>("24h");
+  const [historicalFrom, setHistoricalFrom] = useState("");
+  const [historicalTo, setHistoricalTo] = useState("");
   const [color, setColor] = useState("#198ACB");
 
   const submit = () => {
@@ -27,8 +29,8 @@ export function ChartForm({
       data_mode: dataMode,
       historical_range_type: dataMode === "historical" ? rangeType : null,
       historical_relative_rule: dataMode === "historical" && rangeType === "relative" ? relativeRule : null,
-      historical_from: null,
-      historical_to: null,
+      historical_from: dataMode === "historical" && rangeType === "fixed" && historicalFrom ? new Date(historicalFrom).toISOString() : null,
+      historical_to: dataMode === "historical" && rangeType === "fixed" && historicalTo ? new Date(historicalTo).toISOString() : null,
       layout_x: 0,
       layout_y: 0,
       layout_w: 4,
@@ -68,6 +70,12 @@ export function ChartForm({
               {RELATIVE_RULES.map((r) => (
                 <button key={r} className={`flex-1 rounded py-1 text-xs ${relativeRule === r ? "bg-accent text-white" : "border border-border"}`} onClick={() => setRelativeRule(r)}>{r}</button>
               ))}
+            </div>
+          )}
+          {rangeType === "fixed" && (
+            <div className="flex flex-col gap-2">
+              <input type="datetime-local" value={historicalFrom} onChange={(e) => setHistoricalFrom(e.target.value)} className="border border-border rounded px-2 py-1 text-xs" />
+              <input type="datetime-local" value={historicalTo} onChange={(e) => setHistoricalTo(e.target.value)} className="border border-border rounded px-2 py-1 text-xs" />
             </div>
           )}
         </div>

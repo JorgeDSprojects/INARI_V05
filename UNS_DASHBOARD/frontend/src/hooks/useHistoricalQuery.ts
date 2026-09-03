@@ -17,6 +17,8 @@ export function useHistoricalQuery(
     const fetchOnce = () => {
       api.history.get(chartId).then((res) => {
         if (!cancelled) setPoints(res.points);
+      }).catch(() => {
+        /* leave points as-is; a transient fetch failure shouldn't crash the chart */
       });
     };
     fetchOnce();

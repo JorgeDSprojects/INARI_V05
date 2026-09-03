@@ -5,10 +5,12 @@ import type { Dashboard } from "../types/dashboard";
 
 export function MenuPage() {
   const [dashboards, setDashboards] = useState<Dashboard[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const load = () => {
-    api.dashboards.list().then(setDashboards);
+    setLoadError(null);
+    api.dashboards.list().then(setDashboards).catch(() => setLoadError("No se pudieron cargar los dashboards."));
   };
 
   useEffect(load, []);
@@ -37,6 +39,9 @@ export function MenuPage() {
           + Nuevo dashboard
         </button>
       </div>
+      {loadError && (
+        <div className="bg-danger-soft text-danger rounded-lg px-4 py-2 text-sm mb-4">{loadError}</div>
+      )}
       <div className="bg-surface rounded-xl border border-border p-6">
         <table className="w-full text-sm">
           <thead>

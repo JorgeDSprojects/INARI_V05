@@ -8,11 +8,14 @@ import type { DashboardDetail } from "../types/dashboard";
 export function ViewerPage() {
   const { id } = useParams<{ id: string }>();
   const [dashboard, setDashboard] = useState<DashboardDetail | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (id) api.dashboards.get(id).then(setDashboard);
+    setLoadError(null);
+    if (id) api.dashboards.get(id).then(setDashboard).catch(() => setLoadError("No se pudo cargar el dashboard."));
   }, [id]);
 
+  if (loadError) return <div className="p-8 text-danger">{loadError}</div>;
   if (!dashboard) return <div className="p-8">Cargando…</div>;
 
   return (

@@ -12,17 +12,20 @@ router = APIRouter(prefix="/signals", tags=["signals"])
 
 @router.get("/catalog")
 async def signal_catalog(
-    topic_prefix: str = Query(..., min_length=1),
+    topic_prefix: str = Query(""),
     historian_db: AsyncSession = Depends(get_historian_db),
 ):
-    escaped_prefix = topic_prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    if topic_prefix:
+        escaped_prefix = topic_prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        where_sql = "topic LIKE :prefix ESCAPE '\\' AND topic LIKE '%\\_informative' ESCAPE '\\'"
+        params = {"prefix": f"{escaped_prefix}%"}
+    else:
+        where_sql = "topic LIKE '%\\_informative' ESCAPE '\\'"
+        params = {}
+
     topics_result = await historian_db.execute(
-        text(
-            "SELECT DISTINCT topic FROM mqtt_messages "
-            "WHERE topic LIKE :prefix ESCAPE '\\' AND topic LIKE '%\\_informative' ESCAPE '\\' "
-            "ORDER BY topic"
-        ),
-        {"prefix": f"{escaped_prefix}%"},
+        text(f"SELECT DISTINCT topic FROM mqtt_messages WHERE {where_sql} ORDER BY topic"),
+        params,
     )
     topics = [row[0] for row in topics_result.fetchall()]
 
@@ -34,7 +37,7 @@ async def signal_catalog(
         )
         row = latest.first()
         payload = row[0] if row else None
-        keys = [k for k in (payload or {}).keys() if k != "timestamp"]
+        keys = [k for k in payload.keys() if k != "timestamp"] if isinstance(payload, dict) else []
         catalog.append({"topic": topic, "keys": keys})
     return catalog
 

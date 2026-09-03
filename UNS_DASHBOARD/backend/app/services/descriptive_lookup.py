@@ -5,11 +5,14 @@ shape mismatch or missing entry returns None rather than raising."""
 from __future__ import annotations
 
 import json
+import logging
 import urllib.parse
 
 import httpx
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 def _api_base() -> str:
@@ -41,4 +44,5 @@ async def get_descriptive_signal_meta(topic_prefix: str, signal_key: str) -> dic
             rng = entry.get("range") or [None, None]
             return {"unit": entry.get("unit"), "min": rng[0], "max": rng[1]}
     except Exception:
+        logger.debug("descriptive lookup failed for %s/%s", topic_prefix, signal_key, exc_info=True)
         return None

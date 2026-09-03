@@ -30,8 +30,12 @@ async def get_chart_history(
         raise HTTPException(status_code=400, detail="Chart is not in historical data_mode")
 
     if chart.historical_range_type == "relative":
+        if not chart.historical_relative_rule:
+            raise HTTPException(status_code=400, detail="Chart has no historical_relative_rule configured")
         start, end = resolve_relative_range(chart.historical_relative_rule, datetime.now(timezone.utc))
     elif chart.historical_range_type == "fixed":
+        if not chart.historical_from or not chart.historical_to:
+            raise HTTPException(status_code=400, detail="Chart has no historical_from/historical_to configured")
         start, end = chart.historical_from, chart.historical_to
     else:
         raise HTTPException(status_code=400, detail="Chart has no historical range configured")

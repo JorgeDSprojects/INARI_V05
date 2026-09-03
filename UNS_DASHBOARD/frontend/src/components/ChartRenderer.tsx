@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { ChartCardShell } from "./ChartCardShell";
 import { TimeSeriesChart } from "./charts/TimeSeriesChart";
 import { BarChart } from "./charts/BarChart";
@@ -7,7 +8,9 @@ import { StatusIndicator } from "./charts/StatusIndicator";
 import { ValuesTable } from "./charts/ValuesTable";
 import { useDashboardSocket } from "../hooks/useDashboardSocket";
 import { useHistoricalQuery } from "../hooks/useHistoricalQuery";
-import type { Chart } from "../types/dashboard";
+import type { Chart, HistoryPoint } from "../types/dashboard";
+
+const LIVE_BUFFER_MAX_POINTS = 200;
 
 export function ChartRenderer({ dashboardId, chart, editable, onRemove }: { dashboardId: string; chart: Chart; editable: boolean; onRemove?: () => void }) {
   const topics = chart.data_mode === "live" ? [...new Set(chart.signals.map((s) => s.topic))] : [];
@@ -18,8 +21,36 @@ export function ChartRenderer({ dashboardId, chart, editable, onRemove }: { dash
     chart.data_mode === "historical" ? chart.historical_relative_rule : null
   );
 
-  const liveValue = (signalKey: string, topic: string): number =>
-    liveFrames[topic]?.payload[signalKey] ?? 0;
+  const [liveBuffer, setLiveBuffer] = useState<HistoryPoint[]>([]);
+  const lastFrameKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (chart.data_mode !== "live" || chart.chart_type !== "timeseries") return;
+    const frameKey = Object.values(liveFrames).map((f) => f.time).join(",");
+    if (!frameKey || frameKey === lastFrameKeyRef.current) return;
+    lastFrameKeyRef.current = frameKey;
+    const point: HistoryPoint = { time: new Date().toISOString() };
+    for (const s of chart.signals) {
+      const v = liveFrames[s.topic]?.payload[s.signal_key];
+      if (v !== undefined) point[s.signal_key] = v;
+    }
+    setLiveBuffer((prev) => [...prev, point].slice(-LIVE_BUFFER_MAX_POINTS));
+  }, [liveFrames, chart.data_mode, chart.chart_type, chart.signals]);
+
+  const liveValue = (signalKey: string, topic: string): number | null => {
+    const v = liveFrames[topic]?.payload[signalKey];
+    return typeof v === "number" ? v : null;
+  };
+
+  const lastHistoricalValue = (signalKey: string): number | null => {
+    for (let i = historyPoints.length - 1; i >= 0; i--) {
+      const v = historyPoints[i][signalKey];
+      if (typeof v === "number") return v;
+    }
+    return null;
+  };
+
+  const currentValue = (signalKey: string, topic: string): number | null =>
+    chart.data_mode === "live" ? liveValue(signalKey, topic) : lastHistoricalValue(signalKey);
 
   const modeLabel = chart.data_mode === "live"
     ? "Live · tiempo real"
@@ -29,25 +60,43 @@ export function ChartRenderer({ dashboardId, chart, editable, onRemove }: { dash
 
   const body = () => {
     switch (chart.chart_type) {
-      case "timeseries":
-        return <TimeSeriesChart signals={chart.signals} points={historyPoints} />;
+      case "timeseries": {
+        const points = chart.data_mode === "live" ? liveBuffer : historyPoints;
+        return <TimeSeriesChart signals={chart.signals} points={points} />;
+      }
       case "bar": {
-        const values = Object.fromEntries(chart.signals.map((s) => [s.signal_key, liveValue(s.signal_key, s.topic)]));
+        const values = Object.fromEntries(chart.signals.map((s) => [s.signal_key, currentValue(s.signal_key, s.topic) ?? 0]));
         return <BarChart signals={chart.signals} values={values} />;
       }
-      case "gauge":
-        return <GaugeChart signal={chart.signals[0]} value={liveValue(chart.signals[0]?.signal_key, chart.signals[0]?.topic)} />;
-      case "kpi":
-        return <KpiTile signal={chart.signals[0]} value={liveValue(chart.signals[0]?.signal_key, chart.signals[0]?.topic)} />;
+      case "gauge": {
+        const first = chart.signals[0];
+        return <GaugeChart signal={first} value={currentValue(first?.signal_key, first?.topic) ?? 0} />;
+      }
+      case "kpi": {
+        const first = chart.signals[0];
+        return <KpiTile signal={first} value={currentValue(first?.signal_key, first?.topic) ?? 0} />;
+      }
       case "status":
         return (
           <StatusIndicator
-            states={chart.signals.map((s) => ({ label: s.label ?? s.signal_key, value: String(liveValue(s.signal_key, s.topic)), color: "success" }))}
+            states={chart.signals.map((s) => ({
+              label: s.label ?? s.signal_key,
+              value: String(currentValue(s.signal_key, s.topic) ?? "—"),
+              color: "success" as const,
+            }))}
           />
         );
       case "table": {
         const values = Object.fromEntries(
-          chart.signals.map((s) => [s.signal_key, { value: liveValue(s.signal_key, s.topic), updatedAt: liveFrames[s.topic]?.time ?? "—" }])
+          chart.signals.map((s) => [
+            s.signal_key,
+            {
+              value: currentValue(s.signal_key, s.topic) ?? 0,
+              updatedAt: chart.data_mode === "live"
+                ? (liveFrames[s.topic]?.time ?? "—")
+                : (historyPoints[historyPoints.length - 1]?.time ?? "—"),
+            },
+          ])
         );
         return <ValuesTable signals={chart.signals} values={values} />;
       }

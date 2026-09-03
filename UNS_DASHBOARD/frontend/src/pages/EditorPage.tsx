@@ -11,44 +11,46 @@ export function EditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [dashboard, setDashboard] = useState<DashboardDetail | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = () => {
-    if (id) api.dashboards.get(id).then(setDashboard);
+    setLoadError(null);
+    if (id) api.dashboards.get(id).then(setDashboard).catch(() => setLoadError("No se pudo cargar el dashboard."));
   };
 
   useEffect(load, [id]);
 
+  if (loadError) return <div className="p-8 text-danger">{loadError}</div>;
   if (!dashboard) return <div className="p-8">Cargando…</div>;
+
+  const fail = () => window.alert("La operación falló. Inténtalo de nuevo.");
 
   const saveName = async (name: string) => {
     setDashboard({ ...dashboard, name });
-    await api.dashboards.update(dashboard.id, { name });
+    await api.dashboards.update(dashboard.id, { name }).catch(fail);
   };
 
   const saveDescription = async (description: string) => {
     setDashboard({ ...dashboard, description });
-    await api.dashboards.update(dashboard.id, { description });
+    await api.dashboards.update(dashboard.id, { description }).catch(fail);
   };
 
   const addChart = async (chart: Omit<Chart, "id" | "dashboard_id">) => {
-    await api.charts.create(dashboard.id, chart);
-    load();
+    await api.charts.create(dashboard.id, chart).then(load).catch(fail);
   };
 
   const removeChart = async (chartId: string) => {
-    await api.charts.delete(chartId);
-    load();
+    await api.charts.delete(chartId).then(load).catch(fail);
   };
 
   const onLayoutChange = async (layout: { i: string; x: number; y: number; w: number; h: number }[]) => {
     for (const l of layout) {
-      await api.charts.update(l.i, { layout_x: l.x, layout_y: l.y, layout_w: l.w, layout_h: l.h });
+      await api.charts.update(l.i, { layout_x: l.x, layout_y: l.y, layout_w: l.w, layout_h: l.h }).catch(fail);
     }
   };
 
   const publish = async () => {
-    await api.dashboards.publish(dashboard.id);
-    navigate(`/dashboards/${dashboard.id}`);
+    await api.dashboards.publish(dashboard.id).then(() => navigate(`/dashboards/${dashboard.id}`)).catch(fail);
   };
 
   return (

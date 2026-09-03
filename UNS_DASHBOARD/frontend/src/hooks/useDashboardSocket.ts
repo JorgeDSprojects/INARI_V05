@@ -21,8 +21,12 @@ export function useDashboardSocket(dashboardId: string, topics: string[]): Recor
       socketRef.current = socket;
       socket.onopen = () => socket.send(JSON.stringify({ subscribe: topics }));
       socket.onmessage = (event) => {
-        const frame = JSON.parse(event.data);
-        setFrames((prev) => ({ ...prev, [frame.topic]: { time: frame.time, payload: frame.payload } }));
+        try {
+          const frame = JSON.parse(event.data);
+          setFrames((prev) => ({ ...prev, [frame.topic]: { time: frame.time, payload: frame.payload } }));
+        } catch {
+          /* ignore malformed frame */
+        }
       };
       socket.onclose = () => {
         if (stoppedRef.current) return;
