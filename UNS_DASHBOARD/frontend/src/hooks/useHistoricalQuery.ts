@@ -11,6 +11,8 @@ export function useHistoricalQuery(
   const [points, setPoints] = useState<HistoryPoint[]>([]);
 
   useEffect(() => {
+    if (!rangeType) return;
+
     let cancelled = false;
     const fetchOnce = () => {
       api.history.get(chartId).then((res) => {
