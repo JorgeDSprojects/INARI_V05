@@ -8,7 +8,7 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.models.dashboard import Dashboard
+from app.models.dashboard import Chart, Dashboard
 from app.schemas.dashboard import DashboardCreate, DashboardDetailRead, DashboardRead, DashboardUpdate
 
 router = APIRouter(prefix="/dashboards", tags=["dashboards"])
@@ -32,7 +32,9 @@ async def create_dashboard(body: DashboardCreate, db: AsyncSession = Depends(get
 @router.get("/{dashboard_id}", response_model=DashboardDetailRead)
 async def get_dashboard(dashboard_id: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
-        select(Dashboard).where(Dashboard.id == dashboard_id).options(selectinload(Dashboard.charts))
+        select(Dashboard)
+        .where(Dashboard.id == dashboard_id)
+        .options(selectinload(Dashboard.charts).selectinload(Chart.signals))
     )
     dashboard = result.scalar_one_or_none()
     if not dashboard:
