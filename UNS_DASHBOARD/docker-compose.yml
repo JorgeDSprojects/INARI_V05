@@ -91,6 +91,21 @@ services:
       - uns_manager_net
     restart: unless-stopped
 
+  dashboard_frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8001}
+    container_name: uns_dashboard_frontend
+    ports:
+      - "${FRONTEND_PORT:-3002}:80"
+    depends_on:
+      - dashboard_backend
+    networks:
+      - dashboard_net
+    restart: unless-stopped
+
 volumes:
   dashboard_postgres_data:
     name: uns_dashboard_dashboard_postgres_data
