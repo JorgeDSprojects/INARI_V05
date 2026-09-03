@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import create_tables
-from app.routers import dashboards, charts
+from app.routers import dashboards, charts, history
 
 logging.basicConfig(level=logging.INFO)
 
@@ -34,6 +34,7 @@ app.add_middleware(
 
 app.include_router(dashboards.router)
 app.include_router(charts.router)
+app.include_router(history.router)
 
 
 @app.get("/health")
