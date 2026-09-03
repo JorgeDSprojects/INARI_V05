@@ -1,0 +1,104 @@
+services:
+  # NOTE: service keys below are prefixed with "dashboard_" (not just
+  # "postgres"/"backend") because the root docker-compose.yml's `include:`
+  # merges services by key across all included files. UNS_MANAGER already
+  # defines services named "postgres" and "backend"; using the same bare
+  # keys here silently merges the two into one Frankenstein service
+  # (confirmed via `docker compose config` while wiring this up — the
+  # merged "backend" combined UNS_MANAGER's build context/container_name
+  # with UNS_DASHBOARD's extra env vars and depends_on). UNS_HISTORIAN
+  # avoids this by naming its service "historian_postgres"; we follow the
+  # same convention here. Renaming the service key changes the Compose
+  # DNS alias too (a service is reachable by its service key, not just its
+  # container_name) -- so REDIS_HOST below defaults to the stable
+  # container_name (uns_dashboard_redis) rather than the old bare "redis"
+  # alias, which no longer resolves once the service key is "dashboard_redis".
+  dashboard_postgres:
+    image: postgres:16-alpine
+    container_name: uns_dashboard_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dashboard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dashboardpassword}
+      POSTGRES_DB: ${POSTGRES_DB:-uns_dashboard}
+    volumes:
+      - dashboard_postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "${POSTGRES_PORT:-5435}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dashboard} -d ${POSTGRES_DB:-uns_dashboard}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - dashboard_net
+
+  dashboard_redis:
+    image: redis:7-alpine
+    container_name: uns_dashboard_redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - dashboard_net
+
+  dashboard_bridge:
+    build:
+      context: ./bridge
+      dockerfile: Dockerfile
+    container_name: uns_dashboard_bridge
+    init: true
+    environment:
+      EMQX_HOST: ${EMQX_HOST:-emqx}
+      EMQX_PORT: ${EMQX_PORT:-1883}
+      REDIS_HOST: ${REDIS_HOST:-uns_dashboard_redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      STREAM_MAXLEN: ${STREAM_MAXLEN:-1000}
+      MQTT_CLIENT_ID: ${BRIDGE_MQTT_CLIENT_ID:-uns-dashboard-bridge}
+    depends_on:
+      dashboard_redis:
+        condition: service_healthy
+    networks:
+      - dashboard_net
+      - uns_manager_net
+    restart: unless-stopped
+
+  dashboard_backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: uns_dashboard_backend
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-dashboard}:${POSTGRES_PASSWORD:-dashboardpassword}@uns_dashboard_postgres:5432/${POSTGRES_DB:-uns_dashboard}}
+      HISTORIAN_DATABASE_URL: ${HISTORIAN_DATABASE_URL:-postgresql+asyncpg://historian:historianpassword@uns_historian_postgres:5432/uns_historian}
+      EMQX_HOST: ${EMQX_HOST:-emqx}
+      EMQX_PORT: ${EMQX_PORT:-1883}
+      EMQX_API_PORT: ${EMQX_API_PORT:-18083}
+      REDIS_HOST: ${REDIS_HOST:-uns_dashboard_redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      STREAM_MAXLEN: ${STREAM_MAXLEN:-1000}
+    ports:
+      - "${BACKEND_PORT:-8001}:8000"
+    depends_on:
+      dashboard_postgres:
+        condition: service_healthy
+      dashboard_redis:
+        condition: service_healthy
+    networks:
+      - dashboard_net
+      - uns_manager_net
+    restart: unless-stopped
+
+volumes:
+  dashboard_postgres_data:
+    name: uns_dashboard_dashboard_postgres_data
+
+networks:
+  dashboard_net:
+    driver: bridge
+    name: uns_dashboard_dashboard_net
+  uns_manager_net:
+    external: true
+    name: ${UNS_MANAGER_NETWORK_NAME:-uns_manager_uns_net}
