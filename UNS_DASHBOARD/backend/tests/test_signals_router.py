@@ -21,7 +21,7 @@ def client():
 def test_catalog_lists_topics_and_keys_under_prefix(client: TestClient):
     from sqlalchemy import create_engine, text
 
-    engine = create_engine(HISTORIAN_DATABASE_URL.replace("+asyncpg", ""))
+    engine = create_engine(HISTORIAN_DATABASE_URL.replace("+asyncpg", "+psycopg"))
     with engine.begin() as conn:
         conn.execute(text("DELETE FROM mqtt_messages WHERE topic LIKE 'pytest_catalog/%'"))
         conn.execute(

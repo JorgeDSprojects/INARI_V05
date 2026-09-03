@@ -4,7 +4,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.database import AsyncSessionLocal
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
@@ -19,21 +18,14 @@ def client():
         yield c
 
 
-def _cleanup():
-    import asyncio
-    from sqlalchemy import delete
-    from app.models.dashboard import Dashboard
-
-    async def _run():
-        async with AsyncSessionLocal() as s:
-            await s.execute(delete(Dashboard).where(Dashboard.name.like("pytest%")))
-            await s.commit()
-
-    asyncio.run(_run())
+def _cleanup(client: TestClient):
+    for d in client.get("/dashboards/").json():
+        if d["name"].startswith("pytest"):
+            client.delete(f"/dashboards/{d['id']}")
 
 
 def test_create_update_replace_signals_and_delete_chart(client: TestClient):
-    _cleanup()
+    _cleanup(client)
     dashboard = client.post("/dashboards/", json={"name": "pytest Campo Sur"}).json()
 
     chart = client.post(
@@ -60,4 +52,4 @@ def test_create_update_replace_signals_and_delete_chart(client: TestClient):
     client.delete(f"/charts/{chart['id']}")
     detail = client.get(f"/dashboards/{dashboard['id']}").json()
     assert detail["charts"] == []
-    _cleanup()
+    _cleanup(client)

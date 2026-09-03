@@ -1,6 +1,7 @@
 import os
 
 import pytest
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
 from app.database import Base
@@ -13,7 +14,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def session():
     engine = create_async_engine(DATABASE_URL)
     async with engine.begin() as conn:
@@ -56,5 +57,7 @@ async def test_chart_and_signal_cascade_from_dashboard(session: AsyncSession):
     await session.delete(dashboard)
     await session.commit()
 
-    remaining_charts = (await session.execute(Chart.__table__.select())).fetchall()
+    remaining_charts = (
+        await session.execute(Chart.__table__.select().where(Chart.dashboard_id == dashboard.id))
+    ).fetchall()
     assert remaining_charts == []

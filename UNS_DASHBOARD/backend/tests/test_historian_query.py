@@ -34,6 +34,7 @@ def test_resolve_relative_range_unknown_rule_raises():
 import os
 
 import pytest
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy import text
 
@@ -47,7 +48,7 @@ pytestmark_db = pytest.mark.skipif(
 )
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def historian_session():
     engine = create_async_engine(HISTORIAN_DATABASE_URL)
     Session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)

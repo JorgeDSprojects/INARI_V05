@@ -4,7 +4,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.database import get_db, AsyncSessionLocal
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
@@ -19,21 +18,14 @@ def client():
         yield c
 
 
-def _cleanup():
-    import asyncio
-    from app.models.dashboard import Dashboard
-    from sqlalchemy import delete
-
-    async def _run():
-        async with AsyncSessionLocal() as s:
-            await s.execute(delete(Dashboard).where(Dashboard.name.like("pytest%")))
-            await s.commit()
-
-    asyncio.run(_run())
+def _cleanup(client: TestClient):
+    for d in client.get("/dashboards/").json():
+        if d["name"].startswith("pytest"):
+            client.delete(f"/dashboards/{d['id']}")
 
 
 def test_create_list_publish_delete_dashboard(client: TestClient):
-    _cleanup()
+    _cleanup(client)
     created = client.post("/dashboards/", json={"name": "pytest Campo Sur", "description": "desc"}).json()
     assert created["status"] == "draft"
 
@@ -49,4 +41,4 @@ def test_create_list_publish_delete_dashboard(client: TestClient):
 
     client.delete(f"/dashboards/{created['id']}")
     assert client.get(f"/dashboards/{created['id']}").status_code == 404
-    _cleanup()
+    _cleanup(client)
