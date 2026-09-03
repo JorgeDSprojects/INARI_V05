@@ -53,7 +53,7 @@ async def query_history(
     for topic, keys in by_topic.items():
         select_cols = ", ".join(f"avg((payload ->> :k{i})::numeric) AS v{i}" for i in range(len(keys)))
         params = {f"k{i}": key for i, key in enumerate(keys)}
-        params.update({"topic": topic, "start": start, "end": end, "bucket": f"{bucket_seconds} seconds"})
+        params.update({"topic": topic, "start": start, "end": end, "bucket": timedelta(seconds=bucket_seconds)})
         query = text(
             f"SELECT time_bucket(CAST(:bucket AS interval), time) AS bucket, {select_cols} "
             "FROM mqtt_messages WHERE topic = :topic AND time BETWEEN :start AND :end "

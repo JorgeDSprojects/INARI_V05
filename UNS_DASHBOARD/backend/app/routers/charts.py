@@ -28,7 +28,8 @@ async def create_chart(dashboard_id: str, body: ChartCreate, db: AsyncSession = 
 
 @router.patch("/charts/{chart_id}", response_model=ChartRead)
 async def update_chart(chart_id: str, body: ChartUpdate, db: AsyncSession = Depends(get_db)):
-    chart = await db.get(Chart, chart_id)
+    result = await db.execute(select(Chart).where(Chart.id == chart_id).options(selectinload(Chart.signals)))
+    chart = result.scalar_one_or_none()
     if not chart:
         raise HTTPException(status_code=404, detail="Chart not found")
 
