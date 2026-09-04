@@ -5,6 +5,7 @@ export function ChartCardShell({
   title,
   modeLabel,
   connectionState,
+  staleWarning,
   editable,
   onRemove,
   onEdit,
@@ -13,6 +14,7 @@ export function ChartCardShell({
   title: string;
   modeLabel: string;
   connectionState?: ConnectionState | null;
+  staleWarning?: boolean;
   editable: boolean;
   onRemove?: () => void;
   onEdit?: () => void;
@@ -22,7 +24,9 @@ export function ChartCardShell({
     ? { text: "Reconectando…", cls: "bg-danger-soft text-danger" }
     : connectionState === "stale"
       ? { text: "Sin datos recientes", cls: "bg-warning-soft text-warning" }
-      : { text: modeLabel, cls: modeLabel.startsWith("Live") ? "bg-success-soft text-success" : "bg-accent-soft text-accent" };
+      : staleWarning
+        ? { text: modeLabel, cls: "bg-warning-soft text-warning" }
+        : { text: modeLabel, cls: modeLabel.startsWith("Live") ? "bg-success-soft text-success" : "bg-accent-soft text-accent" };
 
   return (
     <div className="h-full w-full bg-surface border border-border rounded-lg p-4 flex flex-col gap-2">

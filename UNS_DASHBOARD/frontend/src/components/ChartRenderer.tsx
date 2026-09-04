@@ -79,6 +79,8 @@ export function ChartRenderer({
   const currentValue = (signalKey: string, topic: string): number | null =>
     chart.data_mode === "live" ? liveValue(signalKey, topic) : lastHistoricalValue(signalKey);
 
+  const historicalStaleWarning = chart.data_mode === "historical" && historyError && historyPoints.length > 0;
+
   const modeLabel = chart.data_mode === "live"
     ? "Live · tiempo real"
     : chart.historical_range_type === "relative"
@@ -139,7 +141,7 @@ export function ChartRenderer({
   };
 
   return (
-    <ChartCardShell title={chart.name} modeLabel={modeLabel} connectionState={connectionState} editable={editable} onRemove={onRemove} onEdit={onEdit}>
+    <ChartCardShell title={chart.name} modeLabel={modeLabel} connectionState={connectionState} staleWarning={historicalStaleWarning} editable={editable} onRemove={onRemove} onEdit={onEdit}>
       {body()}
     </ChartCardShell>
   );
