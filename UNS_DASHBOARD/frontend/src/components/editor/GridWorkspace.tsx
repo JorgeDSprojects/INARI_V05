@@ -28,6 +28,7 @@ export function GridWorkspace({
       rowHeight={60}
       isDraggable={editable}
       isResizable={editable}
+      draggableCancel="button"
       onLayoutChange={(current) => onLayoutChange?.(current.map((l) => ({ i: l.i, x: l.x, y: l.y, w: l.w, h: l.h })))}
     >
       {charts.map((chart) => (
