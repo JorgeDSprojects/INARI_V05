@@ -1,5 +1,5 @@
 """Entrypoint: subscribes to EMQX with a persistent session, filters
-`_informative` topics, and XADDs each reading to its per-topic Redis Stream.
+`_informative`/`_analytical` topics, and XADDs each reading to its per-topic Redis Stream.
 
 See docs/superpowers/specs/2026-09-03-uns-dashboard-design.md, Section 3.
 """
@@ -13,7 +13,7 @@ import paho.mqtt.client as mqtt
 import redis
 
 from app.config import load_settings
-from app.filter import is_informative_topic
+from app.filter import is_bridgeable_topic
 from app.stream_writer import build_fields, stream_key
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -32,7 +32,7 @@ def main() -> None:
         logger.warning("Disconnected from EMQX (reason_code=%s)", reason_code)
 
     def on_message(client, userdata, message):
-        if not is_informative_topic(message.topic):
+        if not is_bridgeable_topic(message.topic):
             return
         try:
             payload = json.loads(message.payload.decode("utf-8"))
