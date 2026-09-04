@@ -1221,14 +1221,18 @@ Claude-Session: https://claude.ai/code/session_01B9vvkCFuBSPpUDT21VaeXk"
 
 ```typescript
 // frontend/src/hooks/__tests__/useHistoricalQuery.test.ts
-import { renderHook, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useHistoricalQuery } from "../useHistoricalQuery";
 import { api } from "../../api/client";
 
 vi.mock("../../api/client", () => ({
   api: { history: { get: vi.fn() } },
 }));
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe("useHistoricalQuery", () => {
   it("returns points on a successful fetch", async () => {
@@ -1252,7 +1256,9 @@ describe("useHistoricalQuery", () => {
     const { result } = renderHook(() => useHistoricalQuery("chart-1", "fixed", null));
     await waitFor(() => expect(result.current.error).toBe(true));
 
-    result.current.retry();
+    act(() => {
+      result.current.retry();
+    });
 
     await waitFor(() => expect(result.current.error).toBe(false));
     expect(result.current.points).toEqual([{ time: "t", v: 2 }]);
