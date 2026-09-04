@@ -32,7 +32,12 @@ export function TimeSeriesChart({ signals, points }: { signals: ChartSignal[]; p
         ))}
       </div>
       <div className="flex-1 min-h-0">
-        <ReactECharts option={option} replaceMerge={["series"]} style={{ height: "100%", width: "100%" }} opts={{ renderer: "svg" }} />
+        <ReactECharts
+          key={signals.map((s) => s.signal_key).join(",")}
+          option={option}
+          style={{ height: "100%", width: "100%" }}
+          opts={{ renderer: "svg" }}
+        />
       </div>
     </div>
   );
