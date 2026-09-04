@@ -1,7 +1,26 @@
-import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import ReactECharts from "echarts-for-react";
 import type { ChartSignal, HistoryPoint } from "../../types/dashboard";
 
 export function TimeSeriesChart({ signals, points }: { signals: ChartSignal[]; points: HistoryPoint[] }) {
+  const times = points.map((p) => p.time);
+  const option = {
+    grid: { left: 40, right: 16, top: 16, bottom: 48 },
+    xAxis: { type: "category", data: times, axisLabel: { show: false }, axisTick: { show: false } },
+    yAxis: { type: "value", axisLabel: { fontSize: 10 } },
+    tooltip: { trigger: "axis" },
+    dataZoom: [{ type: "inside" }, { type: "slider", height: 16, bottom: 4 }],
+    series: signals.map((s) => ({
+      name: s.label ?? s.signal_key,
+      type: "line",
+      areaStyle: { opacity: 0.15 },
+      showSymbol: false,
+      smooth: true,
+      lineStyle: { color: s.color ?? "#3B82F6" },
+      itemStyle: { color: s.color ?? "#3B82F6" },
+      data: points.map((p) => (p[s.signal_key] as number) ?? null),
+    })),
+  };
+
   return (
     <div className="h-full flex flex-col gap-2">
       <div className="flex gap-4">
@@ -12,23 +31,9 @@ export function TimeSeriesChart({ signals, points }: { signals: ChartSignal[]; p
           </div>
         ))}
       </div>
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={points}>
-          <XAxis dataKey="time" hide />
-          <YAxis width={32} tick={{ fontSize: 10 }} />
-          <Tooltip />
-          {signals.map((s) => (
-            <Area
-              key={s.signal_key}
-              type="monotone"
-              dataKey={s.signal_key}
-              stroke={s.color ?? "#3B82F6"}
-              fill={s.color ?? "#3B82F6"}
-              fillOpacity={0.15}
-            />
-          ))}
-        </AreaChart>
-      </ResponsiveContainer>
+      <div className="flex-1 min-h-0">
+        <ReactECharts option={option} style={{ height: "100%", width: "100%" }} opts={{ renderer: "svg" }} notMerge />
+      </div>
     </div>
   );
 }
