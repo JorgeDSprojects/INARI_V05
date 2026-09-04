@@ -1,26 +1,28 @@
 import { useState } from "react";
-import { SignalPicker } from "./SignalPicker";
+import { SignalTreePicker } from "./SignalTreePicker";
 import type { Chart, ChartSignal, ChartType, DataMode, HistoricalRangeType, RelativeRule } from "../../types/dashboard";
 
 const CHART_TYPES: ChartType[] = ["timeseries", "gauge", "kpi", "bar", "table", "status"];
 const RELATIVE_RULES: RelativeRule[] = ["1h", "24h", "7d", "30d"];
 
 export function ChartForm({
-  topicPrefix,
+  initial,
   onSubmit,
+  onCancel,
 }: {
-  topicPrefix: string;
+  initial?: Chart;
   onSubmit: (chart: Omit<Chart, "id" | "dashboard_id">) => void;
+  onCancel?: () => void;
 }) {
-  const [name, setName] = useState("");
-  const [chartType, setChartType] = useState<ChartType>("timeseries");
-  const [signals, setSignals] = useState<ChartSignal[]>([]);
-  const [dataMode, setDataMode] = useState<DataMode>("live");
-  const [rangeType, setRangeType] = useState<HistoricalRangeType>("relative");
-  const [relativeRule, setRelativeRule] = useState<RelativeRule>("24h");
-  const [historicalFrom, setHistoricalFrom] = useState("");
-  const [historicalTo, setHistoricalTo] = useState("");
-  const [color, setColor] = useState("#198ACB");
+  const [name, setName] = useState(initial?.name ?? "");
+  const [chartType, setChartType] = useState<ChartType>(initial?.chart_type ?? "timeseries");
+  const [signals, setSignals] = useState<ChartSignal[]>(initial?.signals ?? []);
+  const [dataMode, setDataMode] = useState<DataMode>(initial?.data_mode ?? "live");
+  const [rangeType, setRangeType] = useState<HistoricalRangeType>(initial?.historical_range_type ?? "relative");
+  const [relativeRule, setRelativeRule] = useState<RelativeRule>(initial?.historical_relative_rule ?? "24h");
+  const [historicalFrom, setHistoricalFrom] = useState(initial?.historical_from?.slice(0, 16) ?? "");
+  const [historicalTo, setHistoricalTo] = useState(initial?.historical_to?.slice(0, 16) ?? "");
+  const [color, setColor] = useState(initial?.color ?? "#198ACB");
 
   const submit = () => {
     onSubmit({
@@ -31,28 +33,31 @@ export function ChartForm({
       historical_relative_rule: dataMode === "historical" && rangeType === "relative" ? relativeRule : null,
       historical_from: dataMode === "historical" && rangeType === "fixed" && historicalFrom ? new Date(historicalFrom).toISOString() : null,
       historical_to: dataMode === "historical" && rangeType === "fixed" && historicalTo ? new Date(historicalTo).toISOString() : null,
-      layout_x: 0,
-      layout_y: 0,
-      layout_w: 4,
-      layout_h: 4,
+      layout_x: initial?.layout_x ?? 0,
+      layout_y: initial?.layout_y ?? 0,
+      layout_w: initial?.layout_w ?? 4,
+      layout_h: initial?.layout_h ?? 4,
       color,
-      config: null,
+      config: initial?.config ?? null,
       signals,
     });
-    setName("");
-    setSignals([]);
+    if (!initial) {
+      setName("");
+      setSignals([]);
+    }
   };
 
   return (
     <div className="flex flex-col gap-3 border-t border-border pt-4">
-      <label className="text-xs font-bold text-ink-muted uppercase">Nueva gráfica</label>
+      <div className="flex items-center justify-between">
+        <label className="text-xs font-bold text-ink-muted uppercase">{initial ? "Editar gráfica" : "Nueva gráfica"}</label>
+        {initial && onCancel && <button onClick={onCancel} className="text-xs text-ink-muted">Cancelar</button>}
+      </div>
       <input className="border border-border rounded-lg px-3 py-2 text-sm" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nombre de la gráfica" />
 
       <select className="border border-border rounded-lg px-3 py-2 text-sm" value={chartType} onChange={(e) => setChartType(e.target.value as ChartType)}>
         {CHART_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
       </select>
-
-      <SignalPicker topicPrefix={topicPrefix} selected={signals} onChange={setSignals} />
 
       <div className="flex gap-2">
         <button className={`flex-1 rounded-lg py-2 text-xs font-semibold ${dataMode === "live" ? "bg-accent text-white" : "border border-border"}`} onClick={() => setDataMode("live")}>Tiempo real</button>
@@ -81,10 +86,12 @@ export function ChartForm({
         </div>
       )}
 
+      <SignalTreePicker source={dataMode === "live" ? "live" : "historical"} selected={signals} chartColor={color} onChange={setSignals} />
+
       <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-8 w-full" />
 
       <button onClick={submit} disabled={!name || signals.length === 0} className="bg-ink text-white rounded-lg py-2 text-sm font-bold disabled:opacity-40">
-        + Añadir al panel
+        {initial ? "Guardar cambios" : "+ Añadir al panel"}
       </button>
     </div>
   );

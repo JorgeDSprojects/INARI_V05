@@ -12,6 +12,7 @@ export function EditorPage() {
   const navigate = useNavigate();
   const [dashboard, setDashboard] = useState<DashboardDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [editingChart, setEditingChart] = useState<Chart | null>(null);
 
   const load = () => {
     setLoadError(null);
@@ -35,12 +36,17 @@ export function EditorPage() {
     await api.dashboards.update(dashboard.id, { description }).catch(fail);
   };
 
-  const addChart = async (chart: Omit<Chart, "id" | "dashboard_id">) => {
-    await api.charts.create(dashboard.id, chart).then(load).catch(fail);
+  const submitChart = async (chart: Omit<Chart, "id" | "dashboard_id">) => {
+    if (editingChart) {
+      await api.charts.update(editingChart.id, chart).then(load).then(() => setEditingChart(null)).catch(fail);
+    } else {
+      await api.charts.create(dashboard.id, chart).then(load).catch(fail);
+    }
   };
 
   const removeChart = async (chartId: string) => {
     await api.charts.delete(chartId).then(load).catch(fail);
+    if (editingChart?.id === chartId) setEditingChart(null);
   };
 
   const onLayoutChange = async (layout: { i: string; x: number; y: number; w: number; h: number }[]) => {
@@ -62,7 +68,7 @@ export function EditorPage() {
           onChangeName={saveName}
           onChangeDescription={saveDescription}
         />
-        <ChartForm topicPrefix="" onSubmit={addChart} />
+        <ChartForm key={editingChart?.id ?? "new"} initial={editingChart ?? undefined} onSubmit={submitChart} onCancel={() => setEditingChart(null)} />
         <button onClick={publish} className="bg-accent text-white rounded-lg py-3 font-bold">
           Publicar dashboard
         </button>
@@ -73,7 +79,13 @@ export function EditorPage() {
           editable
           onLayoutChange={onLayoutChange}
           renderChart={(chart) => (
-            <ChartRenderer dashboardId={dashboard.id} chart={chart} editable onRemove={() => removeChart(chart.id)} />
+            <ChartRenderer
+              dashboardId={dashboard.id}
+              chart={chart}
+              editable
+              onRemove={() => removeChart(chart.id)}
+              onEdit={() => setEditingChart(chart)}
+            />
           )}
         />
       </div>
