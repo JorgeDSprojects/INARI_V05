@@ -6,8 +6,18 @@ export interface LiveFrame {
   payload: Record<string, number>;
 }
 
-export function useDashboardSocket(dashboardId: string, topics: string[]): Record<string, LiveFrame> {
+export interface DashboardSocketState {
+  frames: Record<string, LiveFrame>;
+  wsOpen: boolean;
+  lastFrameAt: Record<string, number>;
+  connectedAt: number;
+}
+
+export function useDashboardSocket(dashboardId: string, topics: string[]): DashboardSocketState {
   const [frames, setFrames] = useState<Record<string, LiveFrame>>({});
+  const [wsOpen, setWsOpen] = useState(false);
+  const [lastFrameAt, setLastFrameAt] = useState<Record<string, number>>({});
+  const [connectedAt, setConnectedAt] = useState(0);
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stoppedRef = useRef(false);
@@ -19,16 +29,22 @@ export function useDashboardSocket(dashboardId: string, topics: string[]): Recor
     const connect = () => {
       const socket = new WebSocket(wsUrl(dashboardId));
       socketRef.current = socket;
-      socket.onopen = () => socket.send(JSON.stringify({ subscribe: topics }));
+      socket.onopen = () => {
+        setWsOpen(true);
+        setConnectedAt(Date.now());
+        socket.send(JSON.stringify({ subscribe: topics }));
+      };
       socket.onmessage = (event) => {
         try {
           const frame = JSON.parse(event.data);
           setFrames((prev) => ({ ...prev, [frame.topic]: { time: frame.time, payload: frame.payload } }));
+          setLastFrameAt((prev) => ({ ...prev, [frame.topic]: Date.now() }));
         } catch {
           /* ignore malformed frame */
         }
       };
       socket.onclose = () => {
+        setWsOpen(false);
         if (stoppedRef.current) return;
         reconnectTimeoutRef.current = setTimeout(connect, 2000);
       };
@@ -48,5 +64,5 @@ export function useDashboardSocket(dashboardId: string, topics: string[]): Recor
     };
   }, [dashboardId, topics.join(",")]);
 
-  return frames;
+  return { frames, wsOpen, lastFrameAt, connectedAt };
 }
