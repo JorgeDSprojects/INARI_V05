@@ -1,0 +1,109 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: uns_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-unsadmin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-unspassword}
+      POSTGRES_DB: ${POSTGRES_DB:-unsdb}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-unsadmin} -d ${POSTGRES_DB:-unsdb}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - uns_net
+
+  emqx:
+    image: emqx:5.8
+    container_name: uns_emqx
+    environment:
+      EMQX_NODE__NAME: emqx@127.0.0.1
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: public
+    ports:
+      - "1883:1883"
+      - "8083:8083"
+      - "18083:18083"
+    volumes:
+      - emqx_data:/opt/emqx/data
+      - emqx_log:/opt/emqx/log
+      - ./emqx/acl.conf:/opt/emqx/etc/acl.conf:ro
+    healthcheck:
+      test: ["CMD", "/opt/emqx/bin/emqx", "ctl", "status"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    networks:
+      - uns_net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: uns_backend
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://unsadmin:unspassword@postgres:5432/unsdb}
+      EMQX_HOST: ${EMQX_HOST:-emqx}
+      EMQX_PORT: ${EMQX_PORT:-1883}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      emqx:
+        condition: service_healthy
+    networks:
+      - uns_net
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+    container_name: uns_frontend
+    ports:
+      - "3001:80"
+    depends_on:
+      - backend
+    networks:
+      - uns_net
+    restart: unless-stopped
+
+  nodered:
+    image: nodered/node-red:latest
+    container_name: uns_nodered
+    environment:
+      TZ: Europe/Madrid
+    ports:
+      - "1880:1880"
+    volumes:
+      - nodered_data:/data
+    depends_on:
+      emqx:
+        condition: service_healthy
+    networks:
+      - uns_net
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    name: uns_manager_postgres_data
+  emqx_data:
+    name: uns_manager_emqx_data
+  emqx_log:
+    name: uns_manager_emqx_log
+  nodered_data:
+    name: uns_manager_nodered_data
+
+networks:
+  uns_net:
+    driver: bridge
+    name: uns_manager_uns_net

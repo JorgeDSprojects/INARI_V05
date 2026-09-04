@@ -3,7 +3,7 @@
     "1": {
       "Name": "UNS Historian",
       "Group": "Servers",
-      "Host": "postgres",
+      "Host": "uns_historian_postgres",
       "Port": 5432,
       "MaintenanceDB": "uns_historian",
       "Username": "historian",

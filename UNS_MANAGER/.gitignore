@@ -22,8 +22,6 @@ frontend/dist/
 frontend/.vite/
 frontend/.parcel-cache/
 frontend/package-lock.json
-node_modules/
-/package-lock.json
 
 # ─── Docker volumes / runtime data ───────────────────────────────────────────
 # These live in named Docker volumes — not tracked
