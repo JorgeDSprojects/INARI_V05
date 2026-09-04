@@ -38,7 +38,8 @@ export function EditorPage() {
 
   const submitChart = async (chart: Omit<Chart, "id" | "dashboard_id">) => {
     if (editingChart) {
-      await api.charts.update(editingChart.id, chart).then(load).then(() => setEditingChart(null)).catch(fail);
+      const { layout_x, layout_y, layout_w, layout_h, ...rest } = chart;
+      await api.charts.update(editingChart.id, rest).then(load).then(() => setEditingChart(null)).catch(fail);
     } else {
       await api.charts.create(dashboard.id, chart).then(load).catch(fail);
     }
