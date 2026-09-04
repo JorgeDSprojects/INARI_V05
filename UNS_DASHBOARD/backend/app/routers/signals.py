@@ -30,19 +30,14 @@ async def signal_tree_historical(
         params = {}
 
     topics_result = await historian_db.execute(
-        text(f"SELECT DISTINCT topic FROM mqtt_messages WHERE {where_sql} ORDER BY topic"),
+        text(
+            f"SELECT DISTINCT ON (topic) topic, payload FROM mqtt_messages "
+            f"WHERE {where_sql} ORDER BY topic, time DESC"
+        ),
         params,
     )
-    topics = [row[0] for row in topics_result.fetchall()]
-
     entries = []
-    for topic in topics:
-        latest = await historian_db.execute(
-            text("SELECT payload FROM mqtt_messages WHERE topic = :topic ORDER BY time DESC LIMIT 1"),
-            {"topic": topic},
-        )
-        row = latest.first()
-        payload = row[0] if row else None
+    for topic, payload in topics_result.fetchall():
         keys = [k for k in payload.keys() if k != "timestamp"] if isinstance(payload, dict) else []
         topic_type = topic_type_of(topic)
         if topic_type:
