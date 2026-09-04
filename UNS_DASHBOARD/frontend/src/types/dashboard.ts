@@ -10,6 +10,18 @@ export interface ChartSignal {
   source?: "auto" | "manual";
 }
 
+export interface SignalTreeLeaf {
+  topic: string;
+  topic_type: "informative" | "analytical";
+  keys: string[];
+}
+
+export interface SignalTreeNode {
+  segment: string;
+  children: SignalTreeNode[];
+  leaf?: SignalTreeLeaf;
+}
+
 export type ChartType = "timeseries" | "gauge" | "kpi" | "bar" | "table" | "status";
 export type DataMode = "live" | "historical";
 export type HistoricalRangeType = "fixed" | "relative";

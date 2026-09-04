@@ -1,5 +1,5 @@
 import axios from "axios";
-import type { Chart, Dashboard, DashboardDetail, HistoryPoint } from "../types/dashboard";
+import type { Chart, Dashboard, DashboardDetail, HistoryPoint, SignalTreeNode } from "../types/dashboard";
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8001";
 const http = axios.create({ baseURL: BASE });
@@ -23,8 +23,10 @@ export const api = {
     delete: (chartId: string) => http.delete(`/charts/${chartId}`),
   },
   signals: {
-    catalog: (topicPrefix: string) =>
-      http.get<{ topic: string; keys: string[] }[]>("/signals/catalog", { params: { topic_prefix: topicPrefix } }).then((r) => r.data),
+    treeHistorical: (topicPrefix = "") =>
+      http.get<SignalTreeNode[]>("/signals/tree/historical", { params: { topic_prefix: topicPrefix } }).then((r) => r.data),
+    treeLive: () =>
+      http.get<SignalTreeNode[]>("/signals/tree/live").then((r) => r.data),
     descriptive: (topicPrefix: string, signalKey: string) =>
       http.get<{ unit?: string; min?: number; max?: number }>("/signals/descriptive", { params: { topic_prefix: topicPrefix, signal_key: signalKey } }).then((r) => r.data),
   },
