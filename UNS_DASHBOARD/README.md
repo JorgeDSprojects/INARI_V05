@@ -20,8 +20,10 @@ cd ../UNS_DASHBOARD && cp .env.example .env && ./scripts/up.sh
 
 1. `docker compose up -d` from the repo root (brings up all three stacks together).
 2. Open the frontend, create a dashboard, add a `live` gauge chart bound to an
-   existing `_informative` signal (use the signal picker's "buscar" button —
-   it lists topics already captured by `UNS_HISTORIAN`).
+   existing `_informative` or `_analytical` signal — browse the hierarchy
+   tree in the signal picker (live charts browse topics currently flowing
+   through Redis; historical charts browse everything `UNS_HISTORIAN` has
+   ever stored) or type in the filter box to narrow it down.
 3. Publish the dashboard and open its viewer URL.
 4. Publish a synthetic reading: `mosquitto_pub -h localhost -p 1883 -t '<topic>' -m '{"<signal_key>": 42}'`.
 5. Confirm the gauge updates within ~1s — this exercises the full
