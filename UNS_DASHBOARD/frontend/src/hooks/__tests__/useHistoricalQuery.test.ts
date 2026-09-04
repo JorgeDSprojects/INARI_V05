@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useHistoricalQuery } from "../useHistoricalQuery";
 import { api } from "../../api/client";
@@ -32,7 +32,9 @@ describe("useHistoricalQuery", () => {
     const { result } = renderHook(() => useHistoricalQuery("chart-1", "fixed", null));
     await waitFor(() => expect(result.current.error).toBe(true));
 
-    result.current.retry();
+    act(() => {
+      result.current.retry();
+    });
 
     await waitFor(() => expect(result.current.error).toBe(false));
     expect(result.current.points).toEqual([{ time: "t", v: 2 }]);
