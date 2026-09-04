@@ -85,6 +85,7 @@ export function SignalTreePicker({
   }, [source]);
 
   const addSignal = async (topic: string, signalKey: string) => {
+    if (selected.some((s) => s.topic === topic && s.signal_key === signalKey)) return;
     setError(null);
     try {
       const descriptivePrefix = topic.replace(/\/_(informative|analytical)$/, "");

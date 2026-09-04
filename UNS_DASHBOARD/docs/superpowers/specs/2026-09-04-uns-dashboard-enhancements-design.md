@@ -109,3 +109,4 @@ Today: a Redis/EMQX outage leaves a WS connection open but silently mute (fronte
 - A generic `/health` endpoint aggregating Redis/Historian reachability — per-request error handling already gives each chart its own accurate status; a dashboard-wide banner isn't needed yet (YAGNI).
 - Migrating KPI/status/table to ECharts "for consistency" — deliberately rejected, see Section 3.
 - Manual drag-reordering of signals within a chart (order stays insertion order, unchanged from v1).
+- Charting two signals that share the same `signal_key` from different topics on one chart: they currently collide (last one wins, both series render identically) since points are keyed by bare `signal_key`, not `(topic, signal_key)`. Pre-existing since v1; fixing it touches `historian_query.py`'s point shape and every chart component's `dataKey` end-to-end, so deferred rather than bundled into this round's fixes.
