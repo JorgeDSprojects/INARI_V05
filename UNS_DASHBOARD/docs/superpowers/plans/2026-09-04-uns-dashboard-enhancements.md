@@ -877,7 +877,7 @@ function TreeBranch({
   filter: string;
   onAdd: (topic: string, signalKey: string) => void;
 }) {
-  const [open, setOpen] = useState(!!filter);
+  const [open, setOpen] = useState(true);
   if (!matchesFilter(node, filter)) return null;
 
   if (node.leaf) {
