@@ -17,7 +17,10 @@ export function ChatPanel({ onDashboardCreated }: { onDashboardCreated: (dashboa
 
   useEffect(() => {
     if (status?.available && !sessionId) {
-      api.chat.createSession().then((s) => setSessionId(s.id));
+      api.chat
+        .createSession()
+        .then((s) => setSessionId(s.id))
+        .catch(() => setStatus({ available: false, reason: "No se pudo iniciar la sesión de chat." }));
     }
   }, [status, sessionId]);
 
@@ -64,6 +67,7 @@ export function ChatPanel({ onDashboardCreated }: { onDashboardCreated: (dashboa
         <div ref={bottomRef} />
       </div>
       {error && <div className="px-3 text-xs text-danger">{error}</div>}
+      {!sessionId && <div className="px-3 text-xs text-ink-muted">Iniciando conversación…</div>}
       <div className="flex gap-2 p-3 border-t border-border">
         <input
           className="flex-1 border border-border rounded-lg px-3 py-2 text-sm"
@@ -71,9 +75,9 @@ export function ChatPanel({ onDashboardCreated }: { onDashboardCreated: (dashboa
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && send()}
           placeholder="Describe el dashboard que quieres…"
-          disabled={sending}
+          disabled={sending || !sessionId}
         />
-        <button className="px-4 py-2 text-sm rounded-lg bg-brand text-white disabled:opacity-50" onClick={send} disabled={sending}>
+        <button className="px-4 py-2 text-sm rounded-lg bg-brand text-white disabled:opacity-50" onClick={send} disabled={sending || !sessionId}>
           Enviar
         </button>
       </div>
