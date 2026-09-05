@@ -331,11 +331,19 @@ async def create_tables() -> None:
 
 ```python
 # UNS_DASHBOARD/backend/tests/test_chat_models.py
+import os
+
 import pytest
 
 from app.database import AsyncSessionLocal, create_tables
 from app.models.chat import ChatMessage, ChatSession
 from app.models.dashboard import Dashboard
+
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+pytestmark = pytest.mark.skipif(
+    not DATABASE_URL, reason="DATABASE_URL not set; requires a live Postgres (docker compose up -d dashboard_postgres)"
+)
 
 
 @pytest.mark.asyncio
@@ -938,11 +946,19 @@ git commit -m "refactor(uns-dashboard): extract dashboard/chart writes into reus
 
 ```python
 # UNS_DASHBOARD/backend/tests/test_chat_agent.py
+import os
+
 import pytest
 
 from app.database import AsyncSessionLocal, create_tables
 from app.services import chat_agent
 from app.services.llm_providers.base import ProviderResponse, ToolCall
+
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+pytestmark = pytest.mark.skipif(
+    not DATABASE_URL, reason="DATABASE_URL not set; requires a live Postgres (docker compose up -d dashboard_postgres)"
+)
 
 
 class _ScriptedProvider:
@@ -1335,64 +1351,66 @@ git commit -m "feat(uns-dashboard): add the provider-agnostic tool-calling loop"
 
 ```python
 # UNS_DASHBOARD/backend/tests/test_chat_router.py
-import pytest
-from httpx import AsyncClient, ASGITransport
+import os
 
-from app.main import app
+import pytest
+from fastapi.testclient import TestClient
+
 from app.config import settings
+from app.main import app
+
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+pytestmark = pytest.mark.skipif(
+    not DATABASE_URL, reason="DATABASE_URL not set; requires a live Postgres (docker compose up -d dashboard_postgres)"
+)
 
 
 @pytest.fixture
-async def client():
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
+def client():
+    with TestClient(app) as c:
         yield c
 
 
-@pytest.mark.asyncio
-async def test_status_reports_unavailable_when_no_provider_configured(client, monkeypatch):
+def test_status_reports_unavailable_when_no_provider_configured(client: TestClient, monkeypatch):
     monkeypatch.setattr(settings, "llm_provider_type", "none")
-    response = await client.get("/chat/status")
+    response = client.get("/chat/status")
     assert response.status_code == 200
     body = response.json()
     assert body["available"] is False
     assert body["reason"]
 
 
-@pytest.mark.asyncio
-async def test_create_session_returns_an_id(client):
-    response = await client.post("/chat/sessions")
+def test_create_session_returns_an_id(client: TestClient):
+    response = client.post("/chat/sessions")
     assert response.status_code == 201
     assert "id" in response.json()
 
 
-@pytest.mark.asyncio
-async def test_get_session_returns_empty_history_for_a_new_session(client):
-    created = await client.post("/chat/sessions")
-    session_id = created.json()["id"]
+def test_get_session_returns_empty_history_for_a_new_session(client: TestClient):
+    created = client.post("/chat/sessions").json()
 
-    response = await client.get(f"/chat/sessions/{session_id}")
+    response = client.get(f"/chat/sessions/{created['id']}")
     assert response.status_code == 200
     body = response.json()
     assert body["dashboard_id"] is None
     assert body["messages"] == []
 
 
-@pytest.mark.asyncio
-async def test_get_unknown_session_returns_404(client):
-    response = await client.get("/chat/sessions/does-not-exist")
+def test_get_unknown_session_returns_404(client: TestClient):
+    response = client.get("/chat/sessions/does-not-exist")
     assert response.status_code == 404
 
 
-@pytest.mark.asyncio
-async def test_send_message_returns_503_when_provider_unavailable(client, monkeypatch):
+def test_send_message_returns_503_when_provider_unavailable(client: TestClient, monkeypatch):
     monkeypatch.setattr(settings, "llm_provider_type", "none")
-    created = await client.post("/chat/sessions")
-    session_id = created.json()["id"]
+    created = client.post("/chat/sessions").json()
 
-    response = await client.post(f"/chat/sessions/{session_id}/messages", json={"message": "hola"})
+    response = client.post(f"/chat/sessions/{created['id']}/messages", json={"message": "hola"})
     assert response.status_code == 503
 ```
+
+This matches the existing convention in `tests/test_dashboards_router.py`/`test_charts_router.py` exactly (sync `TestClient`, `DATABASE_URL`-gated skip) rather than an async `httpx.AsyncClient`/`ASGITransport` pattern — the latter would risk reintroducing the asyncpg/event-loop-per-test mismatch `tests/conftest.py`'s `_dispose_shared_db_engines` fixture already works around for `TestClient`'s specific lifecycle, and this project doesn't use that pattern anywhere else. Do not "improve" this to an async client style even if it seems more modern — follow the established convention.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
