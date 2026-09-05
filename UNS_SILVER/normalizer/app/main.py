@@ -63,8 +63,12 @@ def main() -> None:
             break
         try:
             _process_until_caught_up(historian_conn, silver_conn, settings)
-        except psycopg.OperationalError:
-            logger.exception("Database error while processing batch, retrying next cycle")
+        except Exception:
+            logger.exception("Error while processing batch, rolling back and retrying next cycle")
+            try:
+                silver_conn.rollback()
+            except Exception:
+                logger.exception("Rollback also failed; connection may need to be recreated")
 
     silver_conn.close()
     historian_conn.close()
