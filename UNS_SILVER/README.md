@@ -40,6 +40,41 @@ cp .env.example .env
 - `./scripts/logs.sh [service]` — tail logs (all services, or one).
 - `./scripts/status.sh` — show container status.
 
+## Read-only access for UNS_MCP (and other external consumers)
+
+Alongside the full `silver` application role, this stack defines a
+read-only `silver_reader` role with `SELECT` on the catalog, readings,
+events, latest-value and aggregate tables and nothing else. `UNS_MCP`
+connects as `silver_reader`; any future read-only consumer should too,
+rather than being handed the `silver` credentials.
+
+Set its password with `SILVER_READER_PASSWORD` in `.env` (default
+`silverreaderpassword`); consumers' own connection strings must match.
+
+Fresh installs get the role from `postgres/init.sql` on first boot. An
+**already-running** instance needs the migration applied once (additive
+and idempotent, so re-running it is harmless):
+
+```bash
+docker exec -i uns_silver_postgres psql -U silver -d uns_silver \
+  < postgres/migrations/0001_add_silver_reader_role.sql
+```
+
+`SILVER_READER_PASSWORD` must already be present in the container's
+environment for that to work — if you only just added it to `.env`, run
+`./scripts/restart.sh silver_postgres` first.
+
+An external consumer also has to be able to *reach* the database:
+`silver_postgres` is joined to `uns_manager_net` (the network shared with
+`UNS_MANAGER`, named by `UNS_MANAGER_NETWORK_NAME`) so containers on that
+network can connect to it as `uns_silver_postgres:5432`. An instance
+created before that network was added to this compose file needs
+`./scripts/up.sh` re-run to pick it up. Verify with:
+
+```bash
+docker network inspect uns_manager_uns_net --format '{{range .Containers}}{{.Name}} {{end}}'
+```
+
 ## Verifying normalization is working
 
 ```bash
