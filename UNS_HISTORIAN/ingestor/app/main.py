@@ -16,7 +16,7 @@ import psycopg
 
 from app.buffer import FlushBuffer
 from app.config import Settings, load_settings
-from app.db import insert_batch, load_last_values
+from app.db import insert_batch, load_last_values, notify_silver_updates
 from app.dedup import DedupCache
 from app.handler import handle_message
 
@@ -59,6 +59,7 @@ def _flush_loop(
                 try:
                     inserted = insert_batch(conn, rows)
                     logger.info("Flushed %d row(s)", inserted)
+                    notify_silver_updates(conn)
                     consecutive_data_failures = 0
                 except psycopg.OperationalError:
                     logger.exception(

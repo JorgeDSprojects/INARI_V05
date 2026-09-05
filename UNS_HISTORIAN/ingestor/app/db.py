@@ -45,3 +45,12 @@ def insert_batch(conn: psycopg.Connection, rows: Iterable[tuple]) -> int:
         )
     conn.commit()
     return len(rows)
+
+
+def notify_silver_updates(conn: psycopg.Connection) -> None:
+    """Wake UNS_SILVER's normalizer immediately instead of making it wait for
+    its next poll cycle. Safe to call even if nothing is listening. Commits
+    (NOTIFY only takes effect on commit), independent of the caller's own
+    transaction boundaries."""
+    conn.execute("NOTIFY silver_updates")
+    conn.commit()

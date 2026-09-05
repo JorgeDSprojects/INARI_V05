@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import psycopg
 import pytest
 
-from app.db import insert_batch, load_last_values
+from app.db import insert_batch, load_last_values, notify_silver_updates
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
@@ -51,3 +51,14 @@ def test_load_last_values_returns_most_recent_payload_per_topic(conn):
 
 def test_insert_batch_with_empty_rows_is_a_noop(conn):
     assert insert_batch(conn, []) == 0
+
+
+def test_notify_silver_updates_is_received_by_a_listener(conn):
+    listener = psycopg.connect(DATABASE_URL, autocommit=True)
+    try:
+        listener.execute("LISTEN silver_updates")
+        notify_silver_updates(conn)
+        received = list(listener.notifies(timeout=2))
+        assert any(n.channel == "silver_updates" for n in received)
+    finally:
+        listener.close()
