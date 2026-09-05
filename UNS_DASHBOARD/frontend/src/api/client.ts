@@ -1,5 +1,14 @@
 import axios from "axios";
-import type { Chart, Dashboard, DashboardDetail, HistoryPoint, SignalTreeNode } from "../types/dashboard";
+import type {
+  Chart,
+  ChatMessageResult,
+  ChatSessionDetail,
+  ChatStatus,
+  Dashboard,
+  DashboardDetail,
+  HistoryPoint,
+  SignalTreeNode,
+} from "../types/dashboard";
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8001";
 const http = axios.create({ baseURL: BASE });
@@ -32,6 +41,13 @@ export const api = {
   },
   history: {
     get: (chartId: string) => http.get<{ points: HistoryPoint[] }>(`/charts/${chartId}/history`).then((r) => r.data),
+  },
+  chat: {
+    status: () => http.get<ChatStatus>("/chat/status").then((r) => r.data),
+    createSession: () => http.post<{ id: string }>("/chat/sessions").then((r) => r.data),
+    getSession: (id: string) => http.get<ChatSessionDetail>(`/chat/sessions/${id}`).then((r) => r.data),
+    sendMessage: (sessionId: string, message: string) =>
+      http.post<ChatMessageResult>(`/chat/sessions/${sessionId}/messages`, { message }).then((r) => r.data),
   },
 };
 

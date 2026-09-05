@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { GridWorkspace } from "../components/editor/GridWorkspace";
 import { DashboardMetaForm } from "../components/editor/DashboardMetaForm";
 import { ChartForm } from "../components/editor/ChartForm";
+import { ChatPanel } from "../components/editor/ChatPanel";
 import { ChartRenderer } from "../components/ChartRenderer";
 import type { Chart, DashboardDetail } from "../types/dashboard";
 
@@ -73,6 +74,9 @@ export function EditorPage() {
         <button onClick={publish} className="bg-accent text-white rounded-lg py-3 font-bold">
           Publicar dashboard
         </button>
+        <div className="flex-1 min-h-[16rem]">
+          <ChatPanel onDashboardCreated={(dashboardId) => navigate(`/dashboards/${dashboardId}/edit`)} />
+        </div>
       </div>
       <div className="flex-1 p-6 overflow-y-auto bg-surface-subtle">
         <GridWorkspace

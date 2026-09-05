@@ -65,3 +65,25 @@ export interface HistoryPoint {
   time: string;
   [signalKey: string]: string | number | null;
 }
+
+export interface ChatStatus {
+  available: boolean;
+  provider_type: string | null;
+  reason: string | null;
+}
+
+export interface ChatMessage {
+  role: string;
+  content: Record<string, unknown>;
+}
+
+export interface ChatSessionDetail {
+  dashboard_id: string | null;
+  messages: ChatMessage[];
+}
+
+export interface ChatMessageResult {
+  reply: string;
+  dashboard_id: string | null;
+  actions: string[];
+}
