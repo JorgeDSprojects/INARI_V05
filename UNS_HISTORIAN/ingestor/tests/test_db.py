@@ -1,5 +1,6 @@
 import os
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 import psycopg
 import pytest
@@ -62,3 +63,34 @@ def test_notify_silver_updates_is_received_by_a_listener(conn):
         assert any(n.channel == "silver_updates" for n in received)
     finally:
         listener.close()
+
+
+def test_insert_batch_commits_rows_durably(conn):
+    """Verify that insert_batch commits rows durably to the database.
+    This is critical because in the flush loop, if notify_silver_updates fails
+    after insert_batch succeeds, the outer exception handlers must not re-queue
+    rows that were already committed. This test confirms rows are durably
+    committed by insert_batch and survive even if a subsequent operation fails."""
+    now = datetime(2026, 9, 2, 12, 30, 0, tzinfo=timezone.utc)
+    rows = [
+        (now, "pytest/topic_durable_1", {"value": 1}, None, 1, False),
+        (now, "pytest/topic_durable_2", {"value": 2}, None, 1, False),
+    ]
+    # Insert the rows (insert_batch commits them immediately)
+    inserted = insert_batch(conn, rows)
+    assert inserted == 2
+
+    # Verify rows are committed by checking them in a fresh connection
+    # (if they weren't committed, a new connection won't see them)
+    verify_conn = psycopg.connect(DATABASE_URL)
+    try:
+        with verify_conn.cursor() as cur:
+            cur.execute(
+                "SELECT topic, payload FROM mqtt_messages WHERE topic LIKE 'pytest/topic_durable_%' ORDER BY topic"
+            )
+            results = cur.fetchall()
+        assert len(results) == 2
+        assert results[0] == ("pytest/topic_durable_1", {"value": 1})
+        assert results[1] == ("pytest/topic_durable_2", {"value": 2})
+    finally:
+        verify_conn.close()

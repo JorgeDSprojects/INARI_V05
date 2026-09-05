@@ -59,7 +59,13 @@ def _flush_loop(
                 try:
                     inserted = insert_batch(conn, rows)
                     logger.info("Flushed %d row(s)", inserted)
-                    notify_silver_updates(conn)
+                    try:
+                        notify_silver_updates(conn)
+                    except Exception:
+                        logger.exception(
+                            "notify_silver_updates failed after a successful flush; "
+                            "UNS_SILVER will pick this up on its next poll cycle instead"
+                        )
                     consecutive_data_failures = 0
                 except psycopg.OperationalError:
                     logger.exception(
