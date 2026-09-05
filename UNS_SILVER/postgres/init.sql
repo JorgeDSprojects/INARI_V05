@@ -86,3 +86,23 @@ SELECT topic, signal_key, signal_type,
 FROM silver_readings
 GROUP BY topic, signal_key, signal_type, bucket
 WITH NO DATA;
+
+-- Dedicated read-only role for UNS_MCP. Not a reuse of the 'silver' app
+-- role -- defense in depth, since this role's consumer (an LLM-facing
+-- query server) has a less predictable input surface than this project's
+-- internal service-to-service calls. See
+-- UNS_MCP/docs/superpowers/specs/2026-09-05-uns-mcp-design.md, Key Decisions.
+\set silver_reader_password `echo "$SILVER_READER_PASSWORD"`
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'silver_reader') THEN
+        CREATE ROLE silver_reader WITH LOGIN PASSWORD :'silver_reader_password';
+    END IF;
+END
+$$;
+
+GRANT CONNECT ON DATABASE uns_silver TO silver_reader;
+GRANT USAGE ON SCHEMA public TO silver_reader;
+GRANT SELECT ON signal_catalog, silver_readings, silver_events, silver_latest_value,
+                silver_readings_1m, silver_readings_1h TO silver_reader;

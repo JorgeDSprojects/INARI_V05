@@ -6,6 +6,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-silver}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-silverpassword}
       POSTGRES_DB: ${POSTGRES_DB:-uns_silver}
+      SILVER_READER_PASSWORD: ${SILVER_READER_PASSWORD:-silverreaderpassword}
     volumes:
       - silver_postgres_data:/var/lib/postgresql/data
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
