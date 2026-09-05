@@ -80,3 +80,25 @@ def test_empty_array_produces_nothing():
     result = flatten_payload({"failure_events": []}, max_depth=6, max_keys=500)
     assert result.values == []
     assert result.events == []
+
+
+def test_array_of_objects_cap_respected():
+    # Large array with small max_keys should cap at max_keys, not append all elements
+    payload = {
+        "alarms": [
+            {"id": 1, "severity": "HIGH"},
+            {"id": 2, "severity": "MEDIUM"},
+            {"id": 3, "severity": "LOW"},
+            {"id": 4, "severity": "INFO"},
+            {"id": 5, "severity": "DEBUG"},
+        ]
+    }
+    result = flatten_payload(payload, max_depth=6, max_keys=3)
+    # Should have exactly 3 events (not all 5), and truncated flag set
+    assert len(result.events) == 3
+    assert result.truncated is True
+    # Verify the events are from the array in order
+    assert result.events[0].event_key == "alarms"
+    assert result.events[0].payload == {"id": 1, "severity": "HIGH"}
+    assert result.events[1].payload == {"id": 2, "severity": "MEDIUM"}
+    assert result.events[2].payload == {"id": 3, "severity": "LOW"}

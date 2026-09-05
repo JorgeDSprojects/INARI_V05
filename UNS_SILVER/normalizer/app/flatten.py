@@ -76,6 +76,9 @@ def _walk(
             return  # a bare top-level array has no key to attach a path to
         if node and all(isinstance(item, dict) for item in node):
             for item in node:
+                if len(result.values) + len(result.events) >= max_keys:
+                    result.truncated = True
+                    return
                 result.events.append(FlatEvent(event_key=path, payload=item))
         elif node:
             result.values.append(FlatValue(path=path, value_numeric=None, value_text=json.dumps(node)))
