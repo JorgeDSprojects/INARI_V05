@@ -1,0 +1,22 @@
+services:
+  mcp_server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: uns_mcp_server
+    init: true
+    environment:
+      SILVER_DATABASE_URL: ${SILVER_DATABASE_URL:-postgresql://silver_reader:silverreaderpassword@uns_silver_postgres:5432/uns_silver}
+      MCP_API_KEY: ${MCP_API_KEY:-changeme-local-dev-key}
+      HTTP_HOST: ${HTTP_HOST:-0.0.0.0}
+      HTTP_PORT: ${HTTP_PORT:-8000}
+    ports:
+      - "${MCP_HTTP_PORT:-8090}:8000"
+    networks:
+      - uns_manager_net
+    restart: unless-stopped
+
+networks:
+  uns_manager_net:
+    external: true
+    name: ${UNS_MANAGER_NETWORK_NAME:-uns_manager_uns_net}
