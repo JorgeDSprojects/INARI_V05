@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -10,6 +8,7 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models.dashboard import Chart, Dashboard
 from app.schemas.dashboard import DashboardCreate, DashboardDetailRead, DashboardRead, DashboardUpdate
+from app.services import dashboard_service
 
 router = APIRouter(prefix="/dashboards", tags=["dashboards"])
 
@@ -22,11 +21,7 @@ async def list_dashboards(db: AsyncSession = Depends(get_db)):
 
 @router.post("/", response_model=DashboardRead, status_code=201)
 async def create_dashboard(body: DashboardCreate, db: AsyncSession = Depends(get_db)):
-    dashboard = Dashboard(name=body.name, description=body.description)
-    db.add(dashboard)
-    await db.commit()
-    await db.refresh(dashboard)
-    return dashboard
+    return await dashboard_service.create_dashboard(db, body.name, body.description)
 
 
 @router.get("/{dashboard_id}", response_model=DashboardDetailRead)
@@ -65,11 +60,4 @@ async def delete_dashboard(dashboard_id: str, db: AsyncSession = Depends(get_db)
 
 @router.post("/{dashboard_id}/publish", response_model=DashboardRead)
 async def publish_dashboard(dashboard_id: str, db: AsyncSession = Depends(get_db)):
-    dashboard = await db.get(Dashboard, dashboard_id)
-    if not dashboard:
-        raise HTTPException(status_code=404, detail="Dashboard not found")
-    dashboard.status = "published"
-    dashboard.published_at = datetime.now(timezone.utc)
-    await db.commit()
-    await db.refresh(dashboard)
-    return dashboard
+    return await dashboard_service.publish_dashboard(db, dashboard_id)
