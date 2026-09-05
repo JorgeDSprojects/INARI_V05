@@ -25,6 +25,6 @@ async def get_historian_db() -> AsyncSession:
 
 
 async def create_tables() -> None:
-    from app.models import dashboard  # noqa: F401
+    from app.models import chat, dashboard  # noqa: F401
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
