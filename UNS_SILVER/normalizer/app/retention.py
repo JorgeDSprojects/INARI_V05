@@ -76,10 +76,8 @@ def apply_policies(conn: psycopg.Connection, settings: Settings) -> None:
             )
     conn.commit()
 
-    _backfill_continuous_aggregates_if_empty(settings)
 
-
-def _backfill_continuous_aggregates_if_empty(settings: Settings) -> None:
+def backfill_continuous_aggregates_if_empty(settings: Settings) -> None:
     """One-time full backfill for a continuous aggregate that has no
     materialized data yet. A refresh policy only ever materializes its own
     rolling window going forward, never pre-existing history -- without

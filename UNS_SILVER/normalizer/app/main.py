@@ -71,6 +71,16 @@ def main() -> None:
     logger.info("Silver normalizer started, listening for silver_updates")
     _safe_process_until_caught_up(historian_conn, silver_conn, settings)
 
+    # Must run after the startup catch-up above, not before: on a fresh deploy
+    # against a historian that already holds bronze history, silver_readings
+    # is still empty until catch-up ingests it. Backfilling any earlier (e.g.
+    # from inside apply_policies, before catch-up) would find the aggregates
+    # empty, run once, materialize nothing, and never get another chance --
+    # the pre-existing backlog would stay permanently invisible to the
+    # aggregates. Running it here guarantees silver_readings already holds
+    # the ingested history the first time this executes.
+    retention.backfill_continuous_aggregates_if_empty(settings)
+
     while not stop_event.is_set():
         # Blocks up to poll_interval_seconds; wakes early on a NOTIFY, or
         # simply times out (empty iteration) as the polling fallback.
