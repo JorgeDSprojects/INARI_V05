@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "UNS Silver",
+      "Group": "Servers",
+      "Host": "uns_silver_postgres",
+      "Port": 5432,
+      "MaintenanceDB": "uns_silver",
+      "Username": "silver",
+      "SSLMode": "prefer"
+    }
+  }
+}
