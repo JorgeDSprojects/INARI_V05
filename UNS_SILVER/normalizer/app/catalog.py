@@ -64,7 +64,11 @@ def extract_definitions(descriptive_payload: dict[str, Any]) -> list[SignalDefin
                     range_max=spec.get("range_max"),
                     thresholds=spec.get("thresholds"),
                     description=spec.get("description"),
-                    source_version=schema_version,
+                    # Coerced to str to match the TEXT `source_version` column
+                    # (and the KPI branch below): a publisher sending
+                    # "schema_version": 1 must compare equal to a stored '1',
+                    # otherwise every message would look like a version change.
+                    source_version=str(schema_version) if schema_version is not None else None,
                 )
             )
 
@@ -73,6 +77,16 @@ def extract_definitions(descriptive_payload: dict[str, Any]) -> list[SignalDefin
         analytical_version = analytical.get("version")
         kpis = analytical.get("kpis")
         if isinstance(kpis, dict):
+            # KNOWN INCONSISTENCY (documented, deliberately not worked around
+            # here): a KPI is registered under its bare key (e.g.
+            # "fleet_health_score"), but if the corresponding `_analytical`
+            # value is a nested object, app/flatten.py emits dot-paths
+            # ("fleet_health_score.value"), which will never match this bare-key
+            # registration in batch.py's catalog lookup -- those readings land
+            # as signal_type='unknown'. The real `_descriptive.analytical`
+            # payload shape is still an unconfirmed assumption (see the plan's
+            # Global Constraints), so no workaround is guessed here. Revisit
+            # once the shape is confirmed with the team publishing it.
             for key, spec in kpis.items():
                 if not isinstance(spec, dict):
                     continue

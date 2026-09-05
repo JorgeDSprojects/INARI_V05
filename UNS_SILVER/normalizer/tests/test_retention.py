@@ -12,6 +12,11 @@ pytestmark = pytest.mark.skipif(
     not DATABASE_URL, reason="DATABASE_URL not set; requires a live Postgres with UNS_SILVER's schema applied"
 )
 
+# NOTE: every settings dict below must carry DATABASE_URL -- apply_policies opens
+# a second, autocommit connection of its own for the continuous-aggregate
+# backfill (refresh_continuous_aggregate cannot run inside a transaction block),
+# and that connection is built from settings, not from the `conn` fixture.
+
 
 @pytest.fixture
 def conn():
@@ -22,6 +27,7 @@ def conn():
 
 def test_apply_policies_does_not_raise(conn):
     settings = load_settings({
+        "DATABASE_URL": DATABASE_URL,
         "RAW_COMPRESS_AFTER_DAYS": "7", "RAW_RETENTION_DAYS": "90",
         "AGG_1M_RETENTION_DAYS": "0", "AGG_1H_RETENTION_DAYS": "365",
     })
@@ -30,6 +36,7 @@ def test_apply_policies_does_not_raise(conn):
 
 def test_apply_policies_is_idempotent(conn):
     settings = load_settings({
+        "DATABASE_URL": DATABASE_URL,
         "RAW_COMPRESS_AFTER_DAYS": "7", "RAW_RETENTION_DAYS": "90",
         "AGG_1M_RETENTION_DAYS": "0", "AGG_1H_RETENTION_DAYS": "0",
     })
@@ -40,6 +47,7 @@ def test_apply_policies_is_idempotent(conn):
 def test_apply_policies_configures_continuous_aggregate_refresh(conn):
     """Verify that continuous aggregate refresh policies are applied idempotently."""
     settings = load_settings({
+        "DATABASE_URL": DATABASE_URL,
         "RAW_COMPRESS_AFTER_DAYS": "7", "RAW_RETENTION_DAYS": "90",
         "AGG_1M_RETENTION_DAYS": "0", "AGG_1H_RETENTION_DAYS": "365",
     })
@@ -73,3 +81,58 @@ def test_apply_policies_configures_continuous_aggregate_refresh(conn):
         )
         count = cur.fetchone()[0]
     assert count == 2, f"Expected 2 refresh jobs after idempotent call, got {count}"
+
+
+def test_apply_policies_registers_compression_segmentby(conn):
+    """Without a segmentby, a compressed chunk cannot be pruned by the
+    topic/signal predicates every query uses and must be decompressed whole."""
+    settings = load_settings({
+        "DATABASE_URL": DATABASE_URL,
+        "RAW_COMPRESS_AFTER_DAYS": "7", "RAW_RETENTION_DAYS": "90",
+        "AGG_1M_RETENTION_DAYS": "0", "AGG_1H_RETENTION_DAYS": "0",
+    })
+    apply_policies(conn, settings)
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT hypertable_name, attname, segmentby_column_index, orderby_column_index, orderby_asc "
+            "FROM timescaledb_information.compression_settings "
+            "WHERE hypertable_name IN ('silver_readings', 'silver_events') "
+            "ORDER BY hypertable_name, attname"
+        )
+        rows = cur.fetchall()
+    conn.rollback()
+
+    segmentby = {(r[0], r[1]) for r in rows if r[2] is not None}
+    assert segmentby == {
+        ("silver_events", "topic"), ("silver_events", "event_key"),
+        ("silver_readings", "topic"), ("silver_readings", "signal_key"),
+    }, f"unexpected segmentby columns: {rows}"
+
+    orderby = {(r[0], r[1], r[4]) for r in rows if r[3] is not None}
+    assert orderby == {("silver_events", "time", False), ("silver_readings", "time", False)}, (
+        f"expected 'time DESC' orderby on both tables, got: {rows}"
+    )
+
+
+def test_apply_policies_backfills_empty_continuous_aggregates(conn):
+    """A refresh policy only materializes its own rolling window going forward;
+    pre-existing history needs an explicit one-time refresh."""
+    settings = load_settings({
+        "DATABASE_URL": DATABASE_URL,
+        "RAW_COMPRESS_AFTER_DAYS": "7", "RAW_RETENTION_DAYS": "90",
+        "AGG_1M_RETENTION_DAYS": "0", "AGG_1H_RETENTION_DAYS": "0",
+    })
+    with conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM silver_readings")
+        reading_count = cur.fetchone()[0]
+    conn.rollback()
+    if reading_count == 0:
+        pytest.skip("no silver_readings rows to aggregate")
+
+    apply_policies(conn, settings)
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM silver_readings_1h")
+        assert cur.fetchone()[0] > 0, "1h aggregate is still empty after apply_policies"
+    conn.rollback()

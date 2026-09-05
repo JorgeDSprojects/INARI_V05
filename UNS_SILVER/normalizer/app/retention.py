@@ -12,6 +12,12 @@ from psycopg import sql
 from app.config import Settings
 
 _COMPRESSED_HYPERTABLES = ("silver_readings", "silver_events")
+# Without a segmentby, a compressed chunk cannot be pruned by the topic/signal
+# predicates every agent query uses -- the whole chunk has to be decompressed.
+_COMPRESSION_SEGMENTBY = {
+    "silver_readings": "topic, signal_key",
+    "silver_events": "topic, event_key",
+}
 _AGGREGATE_RETENTION_SETTINGS = {
     "silver_readings_1m": "agg_1m_retention_days",
     "silver_readings_1h": "agg_1h_retention_days",
@@ -33,7 +39,12 @@ _CONTINUOUS_AGGREGATE_REFRESH_SCHEDULES = {
 def apply_policies(conn: psycopg.Connection, settings: Settings) -> None:
     with conn.cursor() as cur:
         for table in _COMPRESSED_HYPERTABLES:
-            cur.execute(sql.SQL("ALTER TABLE {} SET (timescaledb.compress)").format(sql.Identifier(table)))
+            cur.execute(
+                sql.SQL(
+                    "ALTER TABLE {} SET (timescaledb.compress, "
+                    "timescaledb.compress_segmentby = {}, timescaledb.compress_orderby = 'time DESC')"
+                ).format(sql.Identifier(table), sql.Literal(_COMPRESSION_SEGMENTBY[table]))
+            )
             cur.execute("SELECT remove_compression_policy(%s::regclass, if_exists => TRUE)", (table,))
             cur.execute(
                 "SELECT add_compression_policy(%s::regclass, %s::interval)",
@@ -64,3 +75,26 @@ def apply_policies(conn: psycopg.Connection, settings: Settings) -> None:
                 (table, sched["start_offset"], sched["end_offset"], sched["schedule_interval"]),
             )
     conn.commit()
+
+    _backfill_continuous_aggregates_if_empty(settings)
+
+
+def _backfill_continuous_aggregates_if_empty(settings: Settings) -> None:
+    """One-time full backfill for a continuous aggregate that has no
+    materialized data yet. A refresh policy only ever materializes its own
+    rolling window going forward, never pre-existing history -- without
+    this, data older than the policy's start_offset stays permanently
+    invisible to the aggregate. Guarded by an emptiness check so this
+    doesn't re-run an expensive full backfill on every process restart.
+    Runs on its own autocommit connection because refresh_continuous_aggregate
+    cannot execute inside a transaction block."""
+    backfill_conn = psycopg.connect(settings.database_url, autocommit=True)
+    try:
+        with backfill_conn.cursor() as cur:
+            for table in _CONTINUOUS_AGGREGATE_REFRESH_SCHEDULES:
+                cur.execute(sql.SQL("SELECT count(*) FROM {}").format(sql.Identifier(table)))
+                (row_count,) = cur.fetchone()
+                if row_count == 0:
+                    cur.execute("CALL refresh_continuous_aggregate(%s::regclass, NULL, NULL)", (table,))
+    finally:
+        backfill_conn.close()

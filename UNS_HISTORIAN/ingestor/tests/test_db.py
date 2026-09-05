@@ -1,6 +1,5 @@
 import os
 from datetime import datetime, timezone
-from unittest.mock import patch
 
 import psycopg
 import pytest

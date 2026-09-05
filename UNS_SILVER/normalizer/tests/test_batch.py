@@ -30,7 +30,7 @@ def conn():
     )
     for table in ("signal_catalog", "silver_readings", "silver_events", "silver_latest_value", "mqtt_messages"):
         connection.execute(f"DELETE FROM {table} WHERE topic LIKE 'pytest/%'")
-    save_watermark(connection, 0)
+    save_watermark(connection, 0, datetime.min.replace(tzinfo=timezone.utc))
     connection.commit()
     yield connection
     connection.rollback()
@@ -50,6 +50,13 @@ def _insert_bronze(conn, topic: str, payload: dict, time: datetime) -> None:
 
 def test_no_new_rows_returns_zero(conn):
     assert process_batch(conn, conn, SETTINGS) == 0
+
+
+def test_no_new_rows_leaves_no_open_transaction(conn):
+    """An early return without ending the transaction fetch_watermark opened
+    would leave the connection idle-in-transaction forever on a quiet system."""
+    assert process_batch(conn, conn, SETTINGS) == 0
+    assert conn.info.transaction_status == psycopg.pq.TransactionStatus.IDLE
 
 
 def test_descriptive_message_populates_catalog(conn):
@@ -120,5 +127,6 @@ def test_watermark_advances_and_reprocessing_is_a_noop(conn):
     _insert_bronze(conn, "pytest/T01/GENERATOR/_informative", {"Gen_RPM_Avg": 1.0}, now)
     process_batch(conn, conn, SETTINGS)
     watermark_after_first = fetch_watermark(conn)
+    assert watermark_after_first[0] > 0 and watermark_after_first[1] == now
     assert process_batch(conn, conn, SETTINGS) == 0
     assert fetch_watermark(conn) == watermark_after_first

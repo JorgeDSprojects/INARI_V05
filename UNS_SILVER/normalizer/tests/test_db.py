@@ -52,11 +52,15 @@ def conn():
     connection.close()
 
 
+EPOCH_ZERO = datetime.min.replace(tzinfo=timezone.utc)
+
+
 def test_watermark_defaults_to_zero_then_roundtrips(conn):
-    save_watermark(conn, 0)  # reset in case a prior failed run left state
-    assert fetch_watermark(conn) == 0
-    save_watermark(conn, 42)
-    assert fetch_watermark(conn) == 42
+    save_watermark(conn, 0, EPOCH_ZERO)  # reset in case a prior failed run left state
+    assert fetch_watermark(conn) == (0, EPOCH_ZERO)
+    t = datetime(2026, 9, 5, 12, 0, 0, tzinfo=timezone.utc)
+    save_watermark(conn, 42, t)
+    assert fetch_watermark(conn) == (42, t)
 
 
 def test_fetch_new_bronze_rows_respects_watermark_and_limit(conn):
@@ -71,12 +75,34 @@ def test_fetch_new_bronze_rows_respects_watermark_and_limit(conn):
         cur.execute("SELECT id FROM mqtt_messages WHERE topic = 'pytest/t0'")
         first_id = cur.fetchone()[0]
 
-    rows = fetch_new_bronze_rows(conn, after_id=first_id, limit=10)
+    rows = fetch_new_bronze_rows(conn, after_id=first_id, after_time=EPOCH_ZERO, limit=10)
     assert [r.topic for r in rows] == ["pytest/t1", "pytest/t2"]
     assert all(isinstance(r, BronzeRow) for r in rows)
 
-    limited = fetch_new_bronze_rows(conn, after_id=first_id, limit=1)
+    limited = fetch_new_bronze_rows(conn, after_id=first_id, after_time=EPOCH_ZERO, limit=1)
     assert len(limited) == 1
+
+
+def test_fetch_new_bronze_rows_still_returns_rows_that_arrived_out_of_time_order(conn):
+    """`mqtt_messages.time` comes from the publisher's own timestamp, so a row
+    inserted later (higher id) can carry an earlier time. The time predicate is
+    only a chunk-exclusion hint and must never drop such a row."""
+    later = datetime(2026, 9, 5, 12, 0, 0, tzinfo=timezone.utc)
+    earlier = datetime(2026, 9, 5, 6, 0, 0, tzinfo=timezone.utc)
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO mqtt_messages (time, topic, payload) VALUES (%s, %s, %s) RETURNING id",
+            (later, "pytest/ooo_first", Jsonb({"v": 1})),
+        )
+        first_id = cur.fetchone()[0]
+        cur.execute(
+            "INSERT INTO mqtt_messages (time, topic, payload) VALUES (%s, %s, %s)",
+            (earlier, "pytest/ooo_second", Jsonb({"v": 2})),
+        )
+    conn.commit()
+
+    rows = fetch_new_bronze_rows(conn, after_id=first_id, after_time=later, limit=10)
+    assert [r.topic for r in rows] == ["pytest/ooo_second"]
 
 
 def test_apply_and_fetch_active_definitions(conn):
@@ -108,6 +134,42 @@ def test_apply_catalog_changes_versions_instead_of_overwriting(conn):
     assert len(rows) == 2
     assert rows[0] == (1700, t1, t2)
     assert rows[1][0] == 1800 and rows[1][2] is None
+
+
+def test_apply_catalog_changes_tolerates_two_definitions_at_the_same_instant(conn):
+    """Two _descriptive messages bearing an identical bronze `time` must not
+    raise a UNIQUE (topic, signal_key, effective_since) violation -- that would
+    abort the batch and wedge the watermark forever."""
+    t = datetime(2026, 9, 5, 12, 0, 0, tzinfo=timezone.utc)
+    first = SignalDefinition(signal_key="Gen_RPM_Avg", signal_type="raw", range_max=1700)
+    second = SignalDefinition(signal_key="Gen_RPM_Avg", signal_type="raw", range_max=1800)
+
+    apply_catalog_changes(conn, "pytest/T01/GENERATOR", [first], t)
+    apply_catalog_changes(conn, "pytest/T01/GENERATOR", [second], t)  # must not raise
+    conn.commit()
+
+    active = fetch_active_definitions(conn, "pytest/T01/GENERATOR")
+    assert active["Gen_RPM_Avg"].range_max == 1800  # last writer wins, row stays active
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT count(*) FROM signal_catalog WHERE topic = 'pytest/T01/GENERATOR' "
+            "AND signal_key = 'Gen_RPM_Avg'"
+        )
+        assert cur.fetchone() == (1,)  # upserted in place, no zero-length version
+
+
+def test_fetch_active_definitions_returns_floats_not_decimals(conn):
+    """NUMERIC comes back as Decimal, and Decimal('0.1') != 0.1, which would make
+    diff_definitions see a change on every _descriptive message."""
+    t = datetime(2026, 9, 5, 12, 0, 0, tzinfo=timezone.utc)
+    definition = SignalDefinition(signal_key="Pitch_Angle", signal_type="raw", range_min=0.1, range_max=89.5)
+    apply_catalog_changes(conn, "pytest/T01/ROTOR", [definition], t)
+    conn.commit()
+
+    active = fetch_active_definitions(conn, "pytest/T01/ROTOR")
+    assert isinstance(active["Pitch_Angle"].range_min, float)
+    assert active["Pitch_Angle"] == definition
 
 
 def test_insert_readings_and_upsert_latest_value(conn):

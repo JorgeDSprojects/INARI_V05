@@ -34,6 +34,23 @@ def _process_until_caught_up(
             break
 
 
+def _safe_process_until_caught_up(
+    historian_conn: psycopg.Connection, silver_conn: psycopg.Connection, settings: Settings
+) -> None:
+    """Single guarded entry point shared by the startup catch-up and the main
+    loop. The startup call matters most: the watermark starts at 0, so the very
+    first run replays the entire bronze history in one uninterrupted sequence of
+    batches -- the largest, least-controlled work the process ever does."""
+    try:
+        _process_until_caught_up(historian_conn, silver_conn, settings)
+    except Exception:
+        logger.exception("Error while processing batch, rolling back and retrying next cycle")
+        try:
+            silver_conn.rollback()
+        except Exception:
+            logger.exception("Rollback also failed; connection may need to be recreated")
+
+
 def main() -> None:
     settings = load_settings()
 
@@ -52,23 +69,20 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_sigterm)
 
     logger.info("Silver normalizer started, listening for silver_updates")
-    _process_until_caught_up(historian_conn, silver_conn, settings)
+    _safe_process_until_caught_up(historian_conn, silver_conn, settings)
 
     while not stop_event.is_set():
         # Blocks up to poll_interval_seconds; wakes early on a NOTIFY, or
         # simply times out (empty iteration) as the polling fallback.
+        # A dropped historian_conn here intentionally propagates and exits the
+        # process: Docker's `restart: unless-stopped` brings it back, which
+        # re-establishes the LISTEN registration a reconnect-in-place would
+        # silently lose. This is a deliberate choice, not an unhandled gap.
         for _ in historian_conn.notifies(timeout=settings.poll_interval_seconds):
             break
         if stop_event.is_set():
             break
-        try:
-            _process_until_caught_up(historian_conn, silver_conn, settings)
-        except Exception:
-            logger.exception("Error while processing batch, rolling back and retrying next cycle")
-            try:
-                silver_conn.rollback()
-            except Exception:
-                logger.exception("Rollback also failed; connection may need to be recreated")
+        _safe_process_until_caught_up(historian_conn, silver_conn, settings)
 
     silver_conn.close()
     historian_conn.close()

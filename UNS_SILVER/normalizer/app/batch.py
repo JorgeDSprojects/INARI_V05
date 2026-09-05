@@ -21,14 +21,20 @@ _VALUE_SUFFIXES = ("informative", "analytical")
 def process_batch(
     historian_conn: psycopg.Connection, silver_conn: psycopg.Connection, settings: Settings
 ) -> int:
-    last_id = db.fetch_watermark(silver_conn)
-    rows = db.fetch_new_bronze_rows(historian_conn, last_id, settings.batch_size)
+    last_id, last_time = db.fetch_watermark(silver_conn)
+    rows = db.fetch_new_bronze_rows(historian_conn, last_id, last_time, settings.batch_size)
     if not rows:
+        # fetch_watermark opened an implicit transaction on this non-autocommit
+        # connection; returning without ending it would leave the connection
+        # idle-in-transaction indefinitely on a quiet system, blocking autovacuum
+        # and interfering with the compression/retention background jobs.
+        silver_conn.rollback()
         return 0
 
     reading_rows: list[tuple] = []
     event_rows: list[tuple] = []
     max_id = last_id
+    max_time = last_time
     unknown_count = 0
 
     for row in rows:
@@ -65,6 +71,11 @@ def process_batch(
                 event_rows.append((row.time, base_topic, event.event_key, event.payload, signal_type))
 
         max_id = row.id
+        # `max(...)` rather than plain assignment: bronze `time` is the message's
+        # own timestamp, so it is not monotonic with `id` and the last row of a
+        # batch is not necessarily the latest one. The watermark time must only
+        # ever move forward.
+        max_time = max(max_time, row.time)
 
     if reading_rows:
         db.insert_readings(silver_conn, reading_rows)
@@ -72,7 +83,7 @@ def process_batch(
     if event_rows:
         db.insert_events(silver_conn, event_rows)
 
-    db.save_watermark(silver_conn, max_id)
+    db.save_watermark(silver_conn, max_id, max_time)
     silver_conn.commit()
     logger.info(
         "Batch processed: %d bronze row(s) -> %d reading(s), %d event(s)%s",

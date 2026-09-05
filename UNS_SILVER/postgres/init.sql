@@ -58,6 +58,9 @@ CREATE TABLE IF NOT EXISTS silver_ingest_state (
     id                INT PRIMARY KEY DEFAULT 1,
     last_processed_id BIGINT NOT NULL DEFAULT 0
 );
+-- Idempotent migration: the bronze scan pairs `id > last_processed_id` with a
+-- `time >=` predicate so TimescaleDB can exclude old mqtt_messages chunks.
+ALTER TABLE silver_ingest_state ADD COLUMN IF NOT EXISTS last_processed_time TIMESTAMPTZ NOT NULL DEFAULT '-infinity';
 INSERT INTO silver_ingest_state (id, last_processed_id) VALUES (1, 0) ON CONFLICT (id) DO NOTHING;
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS silver_readings_1m
