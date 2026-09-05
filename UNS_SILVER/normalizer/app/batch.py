@@ -1,0 +1,68 @@
+"""Orchestrates one processing cycle: fetch new bronze rows, route each by
+topic suffix (catalog update vs. flatten-to-readings/events), and commit
+everything — writes and the advanced watermark — atomically.
+
+See docs/superpowers/specs/2026-09-05-uns-silver-design.md, Section 3.
+"""
+from __future__ import annotations
+
+import logging
+
+import psycopg
+
+from app import catalog, db, flatten, topics
+from app.config import Settings
+
+logger = logging.getLogger("uns_silver.normalizer")
+
+_VALUE_SUFFIXES = ("informative", "analytical")
+
+
+def process_batch(
+    historian_conn: psycopg.Connection, silver_conn: psycopg.Connection, settings: Settings
+) -> int:
+    last_id = db.fetch_watermark(silver_conn)
+    rows = db.fetch_new_bronze_rows(historian_conn, last_id, settings.batch_size)
+    if not rows:
+        return 0
+
+    reading_rows: list[tuple] = []
+    event_rows: list[tuple] = []
+    max_id = last_id
+
+    for row in rows:
+        base_topic, suffix = topics.classify_topic(row.topic)
+        payload = row.payload if isinstance(row.payload, dict) else {}
+
+        if suffix == "descriptive":
+            incoming_defs = catalog.extract_definitions(payload)
+            active = db.fetch_active_definitions(silver_conn, base_topic)
+            changed = catalog.diff_definitions(active, incoming_defs)
+            if changed:
+                db.apply_catalog_changes(silver_conn, base_topic, changed, row.time)
+
+        elif suffix in _VALUE_SUFFIXES:
+            active = db.fetch_active_definitions(silver_conn, base_topic)
+            flattened = flatten.flatten_payload(payload, settings.max_flatten_depth, settings.max_flatten_keys)
+            if flattened.truncated:
+                logger.warning("Payload truncated during flattening: topic=%s", row.topic)
+            for value in flattened.values:
+                signal_type = active[value.path].signal_type if value.path in active else "unknown"
+                reading_rows.append(
+                    (row.time, base_topic, value.path, signal_type, value.value_numeric, value.value_text)
+                )
+            for event in flattened.events:
+                signal_type = active[event.event_key].signal_type if event.event_key in active else "unknown"
+                event_rows.append((row.time, base_topic, event.event_key, event.payload, signal_type))
+
+        max_id = row.id
+
+    if reading_rows:
+        db.insert_readings(silver_conn, reading_rows)
+        db.upsert_latest_values(silver_conn, reading_rows)
+    if event_rows:
+        db.insert_events(silver_conn, event_rows)
+
+    db.save_watermark(silver_conn, max_id)
+    silver_conn.commit()
+    return len(rows)
