@@ -8,10 +8,16 @@ services:
     environment:
       SILVER_DATABASE_URL: ${SILVER_DATABASE_URL:-postgresql://silver_reader:silverreaderpassword@uns_silver_postgres:5432/uns_silver}
       MCP_API_KEY: ${MCP_API_KEY:-changeme-local-dev-key}
+      # Local-dev convenience only: keeps `docker compose up` working with
+      # the default key. Set a real MCP_API_KEY (and drop this) for any
+      # deployment that is not your own machine.
+      MCP_ALLOW_DEFAULT_KEY: ${MCP_ALLOW_DEFAULT_KEY:-true}
+      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-localhost:*,127.0.0.1:*,[::1]:*,uns_mcp_server:*}
+      MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-http://localhost:*,http://127.0.0.1:*,http://[::1]:*}
       HTTP_HOST: ${HTTP_HOST:-0.0.0.0}
       HTTP_PORT: ${HTTP_PORT:-8000}
     ports:
-      - "${MCP_HTTP_PORT:-8090}:8000"
+      - "${MCP_HTTP_PORT:-8095}:8000"
     networks:
       - uns_manager_net
     restart: unless-stopped
