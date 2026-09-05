@@ -27,7 +27,9 @@ def _connect() -> psycopg.Connection:
     # correct thing for v1. A connection pool would cut per-call latency
     # under real multi-agent HTTP load; deferred until that's measured to
     # matter, not built speculatively here.
-    return psycopg.connect(_settings.silver_database_url, autocommit=True)
+    # connect_timeout keeps an unreachable database a fast, clear error
+    # instead of a tool call that hangs for the OS TCP timeout.
+    return psycopg.connect(_settings.silver_database_url, autocommit=True, connect_timeout=5)
 
 
 @mcp.tool()
@@ -50,10 +52,16 @@ def get_historical_trend(topic: str, signal_key: str, from_time: datetime, to_ti
     """Get a time series for one signal between two timestamps. Automatically
     downsamples for wide ranges (returns pre-aggregated minute/hour buckets
     instead of every raw reading) so the result stays a manageable size
-    regardless of the requested range."""
+    regardless of the requested range. The result is capped at 1000 points;
+    `truncated: true` means there was more data in the range than was
+    returned -- narrow the range for full coverage. Raises if the
+    topic/signal_key pair is unknown to the system; an empty `points` list
+    means the signal exists but has no data in the requested window."""
     conn = _connect()
     try:
         return db.get_historical_trend(conn, topic, signal_key, from_time, to_time)
+    except db.NotFound as exc:
+        raise ToolError(str(exc)) from exc
     finally:
         conn.close()
 
@@ -63,7 +71,13 @@ def list_signals(topic_prefix: str) -> list[dict]:
     """List every currently-defined signal (raw or KPI) whose topic starts
     with the given prefix, with its unit and description when known. Use
     this to discover what can be asked about under an asset/line/site
-    before calling the other tools."""
+    before calling the other tools.
+
+    Coverage depends on `_descriptive` messages having been published for a
+    topic: a signal with real data but no catalog entry yet won't appear
+    here. get_current_value/get_historical_trend can still be called
+    directly if you know the exact signal_key from another source, so an
+    empty or thin result here does not mean there is no data."""
     conn = _connect()
     try:
         return db.list_signals(conn, topic_prefix)

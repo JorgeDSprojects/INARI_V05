@@ -5,7 +5,7 @@ import psycopg
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
-from app.server import get_current_value, list_active_alarms, list_signals
+from app.server import get_current_value, get_historical_trend, list_active_alarms, list_signals
 
 DATABASE_URL = os.environ.get("SILVER_DATABASE_URL")
 SEED_DATABASE_URL = os.environ.get("SEED_DATABASE_URL")
@@ -47,6 +47,37 @@ def test_get_current_value_tool_returns_dict(seed_conn):
 def test_get_current_value_tool_raises_tool_error_when_missing(seed_conn):
     with pytest.raises(ToolError):
         get_current_value(topic="pytest/nope", signal_key="nope")
+
+
+def test_get_historical_trend_tool_raises_tool_error_for_an_unknown_signal(seed_conn):
+    # Without the NotFound -> ToolError conversion this returned an empty
+    # success, so a typo'd signal_key was indistinguishable from a quiet one.
+    now = datetime(2026, 9, 5, 12, 0, 0, tzinfo=timezone.utc)
+    with pytest.raises(ToolError):
+        get_historical_trend(
+            topic="pytest/T01/GENERATOR",
+            signal_key="Typo_Signal",
+            from_time=now - timedelta(minutes=30),
+            to_time=now,
+        )
+
+
+def test_get_historical_trend_tool_returns_empty_for_a_known_but_quiet_signal(seed_conn):
+    now = datetime(2026, 9, 5, 12, 0, 0, tzinfo=timezone.utc)
+    seed_conn.execute(
+        "INSERT INTO silver_latest_value (topic, signal_key, signal_type, time, value_numeric) VALUES (%s,%s,%s,%s,%s)",
+        ("pytest/T01/GENERATOR", "Gen_RPM_Avg", "raw", now, 1249.0),
+    )
+    seed_conn.commit()
+
+    result = get_historical_trend(
+        topic="pytest/T01/GENERATOR",
+        signal_key="Gen_RPM_Avg",
+        from_time=now - timedelta(days=1, minutes=30),
+        to_time=now - timedelta(days=1),
+    )
+    assert result["points"] == []
+    assert result["truncated"] is False
 
 
 def test_list_signals_tool_returns_list(seed_conn):
