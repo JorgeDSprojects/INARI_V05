@@ -1,6 +1,41 @@
 import asyncio
+import os
 
 import pytest
+
+
+def _database_name(url: str) -> str:
+    # postgresql+asyncpg://user:pass@host:port/dbname
+    return url.rsplit("/", 1)[-1].split("?", 1)[0]
+
+
+def pytest_configure(config):
+    """Refuse to run against a database that isn't clearly a test database.
+
+    This backend's DATABASE_URL/HISTORIAN_DATABASE_URL point at the SAME
+    Postgres databases the real running app (and its real users, in a
+    browser) read and write. Nothing about running `pytest` was ever
+    isolated from that -- a dispatched agent's routine test run once
+    littered the live dev database with real-looking `pytest-*`
+    dashboards and chat sessions, visible in the actual UI, discovered
+    only because a human happened to refresh the page at the wrong
+    moment. Point these env vars at `uns_dashboard_test`/
+    `uns_historian_test` instead (create once with e.g. `docker exec
+    uns_dashboard_postgres psql -U dashboard -d uns_dashboard -c
+    "CREATE DATABASE uns_dashboard_test;"` -- tables are created
+    automatically by this app's own `create_tables()`/`Base.metadata.
+    create_all`, there is no migration step to run first).
+    """
+    for env_var in ("DATABASE_URL", "HISTORIAN_DATABASE_URL"):
+        url = os.environ.get(env_var)
+        if url and "test" not in _database_name(url).lower():
+            raise pytest.UsageError(
+                f"{env_var} points at database '{_database_name(url)}', which does not "
+                "look like a test database (expected a name containing 'test'). Refusing "
+                "to run: this would write directly into the real dev/prod database that "
+                "the actual running application and its users see. Point it at a test "
+                f"database instead, e.g. one named '{_database_name(url)}_test'."
+            )
 
 
 @pytest.fixture(autouse=True)
