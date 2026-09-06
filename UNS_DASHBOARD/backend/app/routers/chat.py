@@ -21,7 +21,7 @@ from app.schemas.chat import (
     ChatSessionRead,
     ChatStatus,
 )
-from app.services import chat_agent
+from app.services import chat_agent, mcp_client
 from app.services.llm_providers.openai_compatible import OpenAICompatibleProvider
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -43,16 +43,33 @@ async def chat_status():
     if settings.llm_provider_type == "openai_compatible":
         # Assumes the endpoint exposes the standard OpenAI /v1/models path
         # (true for Ollama's compat layer per its docs, and for vLLM/OpenAI/
-        # OpenRouter) -- verify with a real curl against whatever LLM_BASE_URL
-        # is actually configured before trusting this in Task 9's live check;
-        # if it 404s against a real target, swap to a lighter probe (e.g. a
-        # bare TCP connect, or that endpoint's actual health path).
+        # OpenRouter) -- verified live in Task 9 against the real target.
         try:
             async with httpx.AsyncClient(timeout=5) as http_client:
                 resp = await http_client.get(settings.llm_base_url.rstrip("/") + "/models")
                 resp.raise_for_status()
+                body = resp.json()
         except Exception as exc:  # noqa: BLE001
             return ChatStatus(available=False, provider_type="openai_compatible", reason=f"Provider unreachable: {exc}")
+
+        # A 2xx /models response isn't enough on its own -- the endpoint can be
+        # up while the configured model was never pulled/loaded. Ollama/vLLM/
+        # OpenAI/OpenRouter all shape this response as {"data": [{"id": ...}]}.
+        model_ids = {m.get("id") for m in body.get("data", [])} if isinstance(body, dict) else set()
+        if settings.llm_model not in model_ids:
+            return ChatStatus(
+                available=False,
+                provider_type="openai_compatible",
+                reason=f"Model '{settings.llm_model}' is not available on the configured LLM provider",
+            )
+
+        # Also confirm the MCP server (the chat's only source of read tools)
+        # is actually reachable, not just that the LLM endpoint is up.
+        try:
+            await mcp_client.list_read_tools()
+        except Exception as exc:  # noqa: BLE001
+            return ChatStatus(available=False, provider_type="openai_compatible", reason=f"MCP server unreachable: {exc}")
+
         return ChatStatus(available=True, provider_type="openai_compatible", reason=None)
 
     return ChatStatus(available=False, provider_type=settings.llm_provider_type, reason="Provider type not yet implemented")
@@ -94,9 +111,24 @@ async def send_message(session_id: str, body: ChatMessageRequest, db: AsyncSessi
     history = [m.content for m in history_result.scalars().all()]
 
     try:
-        reply, new_messages, dashboard_id, actions = await chat_agent.run_turn(db, provider, history, body.message)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=503, detail=f"LLM provider failed: {exc}") from exc
+        try:
+            reply, new_messages, dashboard_id, actions = await chat_agent.run_turn(db, provider, history, body.message)
+        except Exception as exc:  # noqa: BLE001
+            # run_turn can fail mid-loop (e.g. the provider becomes unreachable
+            # after already making write-tool calls that committed via their
+            # own service calls). Those writes are already durable; what is
+            # NOT yet durable is the user's own message, since run_turn's
+            # return value (which normally carries it, as new_messages[0])
+            # never arrives. Persist it here so a retried message doesn't
+            # look like it silently vanished from the session's history.
+            user_turn = {"role": "user", "content": body.message}
+            db.add(ChatMessage(session_id=session_id, role=user_turn["role"], content=user_turn))
+            await db.commit()
+            raise HTTPException(status_code=503, detail=f"LLM provider failed: {exc}") from exc
+    finally:
+        close = getattr(provider, "close", None)
+        if close is not None:
+            await close()
 
     for msg in new_messages:
         db.add(ChatMessage(session_id=session_id, role=msg["role"], content=msg))

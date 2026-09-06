@@ -39,3 +39,13 @@ class OpenAICompatibleProvider:
         # present so callers never surface garbled text to the user/history.
         text = message.content if not tool_calls else None
         return ProviderResponse(text=text, tool_calls=tool_calls)
+
+    async def close(self) -> None:
+        """Releases the underlying client's connection pool. Callers that
+        build a fresh provider per request (app/routers/chat.py's
+        _build_provider()) must call this once they're done with it, since
+        AsyncOpenAI's own httpx client is otherwise never closed. A no-op if
+        the underlying client (e.g. a test stub) doesn't expose close()."""
+        close = getattr(self._client, "close", None)
+        if close is not None:
+            await close()
