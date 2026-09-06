@@ -122,3 +122,50 @@ def test_list_sessions_shows_a_session_with_its_first_user_message(client: TestC
 
 async def _async_empty_list():
     return []
+
+
+def test_send_message_rebinds_session_to_a_genuinely_new_dashboard(client: TestClient, monkeypatch):
+    """Regression test for a bug found in review of Fix 1: a session can now
+    start ALREADY bound to a dashboard (dashboard_id passed at creation). If
+    the user then explicitly asks to create a SEPARATE, new dashboard and the
+    model does so, the response (and the session) must reflect that NEW
+    dashboard_id -- not silently keep pointing at the original one just
+    because it was already truthy. See app/routers/chat.py's send_message.
+    """
+    from app.routers import chat as chat_router
+    from app.services import mcp_client
+    from app.services.llm_providers.base import ProviderResponse, ToolCall
+
+    class _CreatesAnotherDashboardProvider:
+        def __init__(self):
+            self._calls = 0
+
+        async def send(self, messages, tools):
+            self._calls += 1
+            if self._calls == 1:
+                return ProviderResponse(
+                    text=None,
+                    tool_calls=[ToolCall(id="1", name="create_dashboard", arguments={"name": "pytest second dashboard"})],
+                )
+            return ProviderResponse(text="Listo, he creado el nuevo dashboard.", tool_calls=[])
+
+    monkeypatch.setattr(chat_router, "_build_provider", lambda: _CreatesAnotherDashboardProvider())
+    monkeypatch.setattr(mcp_client, "list_read_tools", lambda: _async_empty_list())
+
+    _cleanup(client)
+    original_dashboard = client.post("/dashboards/", json={"name": "pytest original dashboard"}).json()
+    session = client.post("/chat/sessions", json={"dashboard_id": original_dashboard["id"]}).json()
+
+    response = client.post(
+        f"/chat/sessions/{session['id']}/messages",
+        json={"message": "crea un dashboard nuevo llamado pytest second dashboard"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["dashboard_id"] != original_dashboard["id"]
+
+    new_dashboard = client.get(f"/dashboards/{body['dashboard_id']}").json()
+    assert new_dashboard["name"] == "pytest second dashboard"
+
+    detail = client.get(f"/chat/sessions/{session['id']}").json()
+    assert detail["dashboard_id"] == body["dashboard_id"]

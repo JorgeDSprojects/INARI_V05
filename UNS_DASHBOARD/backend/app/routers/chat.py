@@ -169,7 +169,16 @@ async def send_message(session_id: str, body: ChatMessageRequest, db: AsyncSessi
     for msg in new_messages:
         db.add(ChatMessage(session_id=session_id, role=msg["role"], content=msg))
 
-    if dashboard_id and not session.dashboard_id:
+    # Reconcile against whatever run_turn actually returned, not just "was
+    # unbound before" -- a session can now start ALREADY bound (Fix 1: a
+    # session opened inside an existing dashboard's editor), so a plain
+    # `not session.dashboard_id` guard would silently ignore the model
+    # genuinely creating a distinct new dashboard on such a session: the new
+    # dashboard would exist in the DB but the response (and the session)
+    # would keep pointing at the original one, orphaning it from the user's
+    # view. Comparing against the returned value instead handles both the
+    # unbound-session case (unchanged) and the rebind-to-a-new-dashboard case.
+    if dashboard_id and dashboard_id != session.dashboard_id:
         session.dashboard_id = dashboard_id
 
     await db.commit()
