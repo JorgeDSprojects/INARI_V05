@@ -1,80 +1,80 @@
 # INARI_V05
 
-**Un sistema SCADA industrial construido como una arquitectura Unified Namespace (UNS)**: conecta máquinas, sensores y PLCs de una planta con un histórico completo, una capa de datos normalizada y limpia, y paneles de visualización en tiempo real — todo como servicios independientes que se despliegan y escalan por separado.
+**An industrial SCADA system built as a Unified Namespace (UNS) architecture**: it connects machines, sensors, and PLCs on a plant floor to a full history, a clean and normalized data layer, and real-time dashboards — all as independent services that deploy and scale on their own.
 
 ---
 
-## Para quien evalúa el perfil (RRHH / no técnico)
+## For non-technical reviewers (HR)
 
-Este proyecto es un sistema completo de monitorización industrial, del tipo que se usa en fábricas y plantas de energía para saber en todo momento qué está pasando con sus máquinas: temperaturas, velocidades, alarmas, consumos.
+This project is a complete industrial monitoring system, of the kind used in factories and power plants to know at all times what's happening with their machines: temperatures, speeds, alarms, consumption.
 
-Lo que demuestra, más allá del dominio industrial concreto:
+What it demonstrates, beyond the specific industrial domain:
 
-- **Diseño de sistemas distribuidos de principio a fin**: no es una app, son cuatro servicios independientes que se comunican entre sí, cada uno con su propia base de datos, su propio ciclo de vida, y la capacidad de arrancar solo o junto a los demás.
-- **Ingeniería de datos real**: los datos crudos que llegan de las máquinas se transforman en varias capas hasta convertirse en información con significado (nombre, unidad, umbrales, versionado histórico) — el mismo patrón ("bronze → silver") que se usa en proyectos de datos a gran escala.
-- **Backend, frontend, bases de datos e infraestructura**, todo en el mismo proyecto: APIs en Python (FastAPI), interfaces en React, bases de datos relacionales y de series temporales (PostgreSQL/TimescaleDB), mensajería en tiempo real (MQTT), todo empaquetado y orquestado con Docker.
-- **Disciplina de ingeniería**: cada funcionalidad nueva se documenta primero (qué se va a construir y por qué), se implementa con pruebas automáticas, y se revisa antes de darse por terminada — no es código improvisado, hay un proceso detrás.
-- **Capacidad de llevar un proyecto real hasta el final**: desde la primera línea de código hasta un sistema que arranca con un solo comando y funciona de verdad.
+- **End-to-end distributed systems design**: this isn't a single app — it's four independent services that talk to each other, each with its own database, its own lifecycle, and the ability to start standalone or alongside the others.
+- **Real data engineering**: raw data coming off the machines goes through several layers until it becomes information with actual meaning (name, unit, thresholds, version history) — the same "bronze → silver" pattern used in large-scale data projects.
+- **Backend, frontend, databases, and infrastructure**, all in one project: Python APIs (FastAPI), React interfaces, relational and time-series databases (PostgreSQL/TimescaleDB), real-time messaging (MQTT), all packaged and orchestrated with Docker.
+- **Engineering discipline**: every new feature is documented first (what will be built and why), implemented with automated tests, and reviewed before being considered done — this isn't improvised code, there's a real process behind it.
+- **The ability to carry a real project through to completion**: from the first line of code to a system that starts with a single command and genuinely works.
 
-Si buscas a alguien capaz de diseñar, construir y mantener un sistema con estas piezas moviéndose a la vez, este proyecto es una muestra directa de ese trabajo.
+If you're looking for someone capable of designing, building, and maintaining a system with this many moving pieces at once, this project is a direct sample of that work.
 
 ---
 
-## Para perfil técnico
+## For a technical reviewer
 
-### Arquitectura
+### Architecture
 
-Cuatro servicios independientes, cada uno con su propio `docker-compose.yml`, orquestados juntos por el `docker-compose.yml` de la raíz (que simplemente los incluye bajo una red Docker compartida):
+Four independent services, each with its own `docker-compose.yml`, orchestrated together by the root `docker-compose.yml` (which simply includes all of them under one shared Docker network):
 
 ```
                     ┌──────────────┐
-   Sensores/PLCs →  │  UNS_MANAGER │  MQTT (EMQX) + Node-RED + API/panel propios
+   Sensors/PLCs  →  │  UNS_MANAGER │  MQTT (EMQX) + Node-RED + its own API/panel
                     └──────┬───────┘
-                           │ mensajes MQTT en crudo ("bronze")
+                           │ raw MQTT messages ("bronze")
                            ▼
                     ┌──────────────┐
-                    │ UNS_HISTORIAN│  histórico completo, sin filtrar (TimescaleDB)
+                    │ UNS_HISTORIAN│  full, unfiltered history (TimescaleDB)
                     └──────┬───────┘
                            │
                            ▼
                     ┌──────────────┐
-                    │  UNS_SILVER  │  normaliza: catálogo de señales versionado,
-                    └──────────────┘  valores tipados, log de eventos/alarmas
+                    │  UNS_SILVER  │  normalizes: versioned signal catalog,
+                    └──────────────┘  typed readings, event/alarm log
 
                     ┌──────────────┐
-                    │ UNS_DASHBOARD│  paneles con gráficas en tiempo real e históricas
-                    └──────────────┘  (lee de UNS_HISTORIAN + su propia BBDD)
+                    │ UNS_DASHBOARD│  live and historical charting dashboards
+                    └──────────────┘  (reads from UNS_HISTORIAN + its own DB)
 ```
 
-| Servicio | Responsabilidad | Stack | Puertos (host) |
+| Service | Responsibility | Stack | Ports (host) |
 |---|---|---|---|
-| **UNS_MANAGER** | Punto de entrada: recibe MQTT de las máquinas, modela la jerarquía de activos (árbol ISA-95), automatización con Node-RED | EMQX (broker MQTT 5.0), Node-RED, FastAPI, React, PostgreSQL | Postgres 5433, MQTT 1883, panel EMQX 18083, API 8000, frontend 3001, Node-RED 1880 |
-| **UNS_HISTORIAN** | Archiva **todos** los mensajes MQTT tal cual llegan — el histórico bruto, sin filtrar ("bronze") | TimescaleDB, pgAdmin, ingestor MQTT propio (deduplicación, buffer con flush por lotes, reconexión resiliente) | Postgres 5434, pgAdmin 5051 |
-| **UNS_SILVER** | Transforma el histórico bruto en datos con significado: catálogo de señales versionado (con umbrales e histórico de cambios), lecturas tipadas, agregados continuos (1m/1h), log de eventos | TimescaleDB (continuous aggregates), pgAdmin, normalizador bronze→silver | Postgres 5436 |
-| **UNS_DASHBOARD** | Paneles visuales: gráficas en tiempo real e históricas, CRUD completo de dashboards/gráficas, publicación de paneles | FastAPI + SQLAlchemy async, React + Vite + TypeScript, PostgreSQL, Redis (puente MQTT→Redis para datos en vivo de baja latencia) | Postgres 5435, backend 8001, frontend 3002 |
+| **UNS_MANAGER** | Entry point: receives machines' MQTT traffic, models the asset hierarchy (an ISA-95 tree), automation via Node-RED | EMQX (MQTT 5.0 broker), Node-RED, FastAPI, React, PostgreSQL | Postgres 5433, MQTT 1883, EMQX dashboard 18083, API 8000, frontend 3001, Node-RED 1880 |
+| **UNS_HISTORIAN** | Archives **every** MQTT message exactly as it arrives — the raw, unfiltered ("bronze") history | TimescaleDB, pgAdmin, a dedicated MQTT ingestor (deduplication, batched flush buffer, resilient reconnection) | Postgres 5434, pgAdmin 5051 |
+| **UNS_SILVER** | Turns the raw history into meaningful data: a versioned signal catalog (with thresholds and a change history), typed readings, continuous aggregates (1m/1h), an event log | TimescaleDB (continuous aggregates), pgAdmin, a bronze-to-silver normalizer | Postgres 5436 |
+| **UNS_DASHBOARD** | Visual dashboards: live and historical charts, full dashboard/chart CRUD, dashboard publishing | FastAPI + async SQLAlchemy, React + Vite + TypeScript, PostgreSQL, Redis (an MQTT→Redis bridge for low-latency live data) | Postgres 5435, backend 8001, frontend 3002 |
 
-### Decisiones de diseño destacables
+### Notable design decisions
 
-- **Patrón medallón (bronze → silver)** aplicado a series temporales industriales: `UNS_HISTORIAN` guarda el dato crudo sin ninguna interpretación (para no perder nunca información), `UNS_SILVER` es la única capa que decide qué significa cada señal — y lo hace con **versionado real**: cambiar la unidad o los umbrales de una señal no sobrescribe el histórico, lo cierra (`effective_until`) y abre una versión nueva.
-- **Agregados continuos de TimescaleDB** (`silver_readings_1m`/`_1h`) para que consultar un rango histórico amplio no signifique escanear millones de filas crudas.
-- **Redes Docker segmentadas por servicio**, con una red compartida (`uns_manager_net`) solo para lo que de verdad necesita cruzar servicios — cada `docker-compose.yml` sigue siendo válido de forma independiente.
-- **Ingestor MQTT con deduplicación y buffer acotado**: evita duplicados en reconexiones y no deja crecer la memoria sin límite si Postgres se queda temporalmente inaccesible.
+- **A medallion pattern (bronze → silver)** applied to industrial time-series data: `UNS_HISTORIAN` stores the raw data with zero interpretation (so nothing is ever lost), and `UNS_SILVER` is the single layer that decides what each signal actually means — with **real versioning**: changing a signal's unit or thresholds doesn't overwrite history, it closes the old version (`effective_until`) and opens a new one.
+- **TimescaleDB continuous aggregates** (`silver_readings_1m`/`_1h`) so querying a wide historical range doesn't mean scanning millions of raw rows.
+- **Per-service Docker networking**, with one shared network (`uns_manager_net`) reserved only for what genuinely needs to cross services — every `docker-compose.yml` still works standalone.
+- **A deduplicating MQTT ingestor with a bounded buffer**: avoids duplicate rows on reconnects and never lets memory grow unbounded if Postgres becomes temporarily unreachable.
 
-### Cómo arrancarlo
+### Running it
 
 ```bash
-docker compose up -d        # los cuatro servicios juntos, desde la raíz
+docker compose up -d        # all four services together, from the repo root
 ```
 
-Cada servicio también arranca solo, desde su propia carpeta:
+Each service can also start on its own, from its own folder:
 
 ```bash
 cd UNS_DASHBOARD && docker compose up -d
 ```
 
-### Documentación
+### Documentation
 
-- **Specs de diseño y planes de implementación**, por funcionalidad: `<servicio>/docs/superpowers/specs/` y `<servicio>/docs/superpowers/plans/`
-- **Reglas de desarrollo del repositorio**: [`AGENTS.md`](AGENTS.md)
-- **Guías de verificación paso a paso**: [`manual/`](manual/) (español e inglés)
-- **README propio de cada servicio**, con detalles de arranque y operación: `UNS_MANAGER/`, `UNS_HISTORIAN/README.md`, `UNS_SILVER/README.md`, `UNS_DASHBOARD/README.md`
+- **Design specs and implementation plans**, per feature: `<service>/docs/superpowers/specs/` and `<service>/docs/superpowers/plans/`
+- **Repository development rules**: [`AGENTS.md`](AGENTS.md)
+- **Step-by-step verification guides**: [`manual/`](manual/) (English and Spanish)
+- **Each service's own README**, with setup/operation details: `UNS_MANAGER/`, `UNS_HISTORIAN/README.md`, `UNS_SILVER/README.md`, `UNS_DASHBOARD/README.md`
