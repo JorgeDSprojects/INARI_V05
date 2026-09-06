@@ -30,10 +30,19 @@ class ChatMessageRequest(BaseModel):
     message: str
 
 
+class SignalCandidate(BaseModel):
+    topic: str
+    signal_key: str
+    signal_type: str | None = None
+    unit: str | None = None
+    description: str | None = None
+
+
 class ChatMessageResponse(BaseModel):
     reply: str
     dashboard_id: str | None
     actions: list[str]
+    candidates: list[SignalCandidate] | None = None
 
 
 class ChatMessageRead(BaseModel):

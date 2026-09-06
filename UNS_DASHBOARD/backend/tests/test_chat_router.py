@@ -169,3 +169,33 @@ def test_send_message_rebinds_session_to_a_genuinely_new_dashboard(client: TestC
 
     detail = client.get(f"/chat/sessions/{session['id']}").json()
     assert detail["dashboard_id"] == body["dashboard_id"]
+
+
+def test_send_message_surfaces_candidates_in_the_response(client: TestClient, monkeypatch):
+    from app.routers import chat as chat_router
+    from app.services import mcp_client
+    from app.services.llm_providers.base import ProviderResponse, ToolCall
+
+    class _FakeProvider:
+        async def send(self, messages, tools):
+            return ProviderResponse(
+                text=None,
+                tool_calls=[ToolCall(
+                    id="1", name="present_signal_candidates",
+                    arguments={"candidates": [
+                        {"topic": "GALERNA/T01/GENERATOR", "signal_key": "Gen_RPM_Max", "signal_type": "kpi", "unit": "rpm", "description": None},
+                    ]},
+                )],
+            )
+
+    monkeypatch.setattr(chat_router, "_build_provider", lambda: _FakeProvider())
+    monkeypatch.setattr(mcp_client, "list_read_tools", lambda: _async_empty_list())
+
+    created = client.post("/chat/sessions").json()
+    response = client.post(f"/chat/sessions/{created['id']}/messages", json={"message": "busca el rpm del generador"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["candidates"] == [
+        {"topic": "GALERNA/T01/GENERATOR", "signal_key": "Gen_RPM_Max", "signal_type": "kpi", "unit": "rpm", "description": None},
+    ]

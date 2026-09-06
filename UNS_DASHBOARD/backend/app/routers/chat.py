@@ -23,6 +23,7 @@ from app.schemas.chat import (
     ChatSessionRead,
     ChatSessionSummary,
     ChatStatus,
+    SignalCandidate,
 )
 from app.services import chat_agent, mcp_client
 from app.services.llm_providers.openai_compatible import OpenAICompatibleProvider
@@ -146,7 +147,7 @@ async def send_message(session_id: str, body: ChatMessageRequest, db: AsyncSessi
 
     try:
         try:
-            reply, new_messages, dashboard_id, actions = await chat_agent.run_turn(
+            reply, new_messages, dashboard_id, actions, candidates = await chat_agent.run_turn(
                 db, provider, history, body.message, current_dashboard_id=session.dashboard_id
             )
         except Exception as exc:  # noqa: BLE001
@@ -183,4 +184,4 @@ async def send_message(session_id: str, body: ChatMessageRequest, db: AsyncSessi
 
     await db.commit()
 
-    return ChatMessageResponse(reply=reply, dashboard_id=session.dashboard_id, actions=actions)
+    return ChatMessageResponse(reply=reply, dashboard_id=session.dashboard_id, actions=actions, candidates=candidates)
