@@ -2,7 +2,20 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../../api/client";
 import type { ChatMessage } from "../../types/dashboard";
 
-export function ChatPanel({ onDashboardCreated }: { onDashboardCreated: (dashboardId: string) => void }) {
+export function ChatPanel({
+  onDashboardCreated,
+  onDashboardChanged,
+}: {
+  onDashboardCreated: (dashboardId: string) => void;
+  /** Called whenever a turn changed something (actions is non-empty) on a
+   * dashboard this session had already reported before -- i.e. every turn
+   * after the one that first created/bound the dashboard. onDashboardCreated
+   * only fires once per dashboard id (the backend returns the session's
+   * dashboard_id on every turn, not just the one that created it), so
+   * without this the editor's grid would only ever refresh after the very
+   * first turn. */
+  onDashboardChanged?: () => void;
+}) {
   const [status, setStatus] = useState<{ available: boolean; reason: string | null } | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -10,6 +23,7 @@ export function ChatPanel({ onDashboardCreated }: { onDashboardCreated: (dashboa
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const reportedDashboardIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     api.chat.status().then(setStatus).catch(() => setStatus({ available: false, reason: "No se pudo comprobar el estado del asistente." }));
@@ -38,7 +52,12 @@ export function ChatPanel({ onDashboardCreated }: { onDashboardCreated: (dashboa
     try {
       const result = await api.chat.sendMessage(sessionId, userText);
       setMessages((m) => [...m, { role: "assistant", content: { text: result.reply } }]);
-      if (result.dashboard_id) onDashboardCreated(result.dashboard_id);
+      if (result.dashboard_id && result.dashboard_id !== reportedDashboardIdRef.current) {
+        reportedDashboardIdRef.current = result.dashboard_id;
+        onDashboardCreated(result.dashboard_id);
+      } else if (result.actions.length > 0) {
+        onDashboardChanged?.();
+      }
     } catch {
       setError("El asistente no respondió. Inténtalo de nuevo.");
     } finally {

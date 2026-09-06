@@ -75,7 +75,10 @@ export function EditorPage() {
           Publicar dashboard
         </button>
         <div className="flex-1 min-h-[16rem]">
-          <ChatPanel onDashboardCreated={(dashboardId) => navigate(`/dashboards/${dashboardId}/edit`)} />
+          <ChatPanel
+            onDashboardCreated={(dashboardId) => navigate(`/dashboards/${dashboardId}/edit`)}
+            onDashboardChanged={load}
+          />
         </div>
       </div>
       <div className="flex-1 p-6 overflow-y-auto bg-surface-subtle">
