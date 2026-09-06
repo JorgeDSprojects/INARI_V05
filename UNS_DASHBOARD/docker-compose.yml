@@ -81,6 +81,12 @@ services:
       REDIS_HOST: ${REDIS_HOST:-uns_dashboard_redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
       STREAM_MAXLEN: ${STREAM_MAXLEN:-1000}
+      MCP_SERVER_URL: ${MCP_SERVER_URL:-http://uns_mcp_server:8000/mcp}
+      MCP_API_KEY: ${MCP_API_KEY:-}
+      LLM_PROVIDER_TYPE: ${LLM_PROVIDER_TYPE:-none}
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://uns_ollama:11434/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-ollama}
+      LLM_MODEL: ${LLM_MODEL:-qwen2.5:14b-instruct}
     ports:
       - "${BACKEND_PORT:-8001}:8000"
     depends_on:

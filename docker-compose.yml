@@ -1,16 +1,18 @@
 name: inari_uns
 
-# Orchestrates the five independent stacks together in one project:
+# Orchestrates the six independent stacks together in one project:
 #   - UNS_MANAGER: Node-RED, EMQX, backend/frontend, Postgres
 #   - UNS_HISTORIAN: TimescaleDB + pgAdmin + MQTT ingestor
 #   - UNS_DASHBOARD: Postgres, Redis, MQTT->Redis bridge, backend/frontend
 #   - UNS_SILVER: TimescaleDB + pgAdmin + bronze-to-silver normalizer
 #   - UNS_MCP: read-only MCP server exposing UNS_SILVER over HTTP
+#   - UNS_OLLAMA: local LLM runtime backing UNS_DASHBOARD's chat agent
 #
 # Each stack keeps working standalone too (`cd UNS_MANAGER && docker compose up`,
 # `cd UNS_HISTORIAN && docker compose up`, `cd UNS_DASHBOARD && docker compose up`,
-# `cd UNS_SILVER && docker compose up`, `cd UNS_MCP && docker compose up`) —
-# this file just includes all five under one project so they always come up
+# `cd UNS_SILVER && docker compose up`, `cd UNS_MCP && docker compose up`,
+# `cd UNS_OLLAMA && docker compose up`) —
+# this file just includes all six under one project so they always come up
 # together, in the right order, on the same uns_net network.
 #
 # Usage: docker compose up -d   (from this directory)
@@ -21,6 +23,7 @@ include:
   - UNS_DASHBOARD/docker-compose.yml
   - UNS_SILVER/docker-compose.yml
   - UNS_MCP/docker-compose.yml
+  - UNS_OLLAMA/docker-compose.yml
 
 # Cross-stack overrides, only meaningful once both stacks are merged into
 # one project (UNS_HISTORIAN's own compose file can't express these
