@@ -75,6 +75,15 @@ export interface ChatStatus {
 export interface ChatMessage {
   role: string;
   content: Record<string, unknown>;
+  candidates?: SignalCandidate[] | null;
+}
+
+export interface SignalCandidate {
+  topic: string;
+  signal_key: string;
+  signal_type: string | null;
+  unit: string | null;
+  description: string | null;
 }
 
 export interface ChatSessionDetail {
@@ -92,4 +101,5 @@ export interface ChatMessageResult {
   reply: string;
   dashboard_id: string | null;
   actions: string[];
+  candidates: SignalCandidate[] | null;
 }

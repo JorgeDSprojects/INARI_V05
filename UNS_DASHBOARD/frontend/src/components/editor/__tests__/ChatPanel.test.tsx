@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { ChatPanel } from "../ChatPanel";
 import { api } from "../../../api/client";
@@ -16,6 +16,10 @@ vi.mock("../../../api/client", () => ({
 describe("ChatPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // jsdom doesn't implement scrollIntoView; ChatPanel calls it whenever the
+    // message list changes, which only happens once a test actually sends a
+    // message (no prior test in this file did).
+    Element.prototype.scrollIntoView = vi.fn();
   });
 
   it("shows a loading state before the status check resolves, with no input or send button in the DOM", () => {
@@ -70,5 +74,49 @@ describe("ChatPanel", () => {
     expect(input).toBeDisabled();
     expect(screen.getByRole("button", { name: "Enviar" })).toBeDisabled();
     expect(screen.getByText(/Iniciando conversación/i)).toBeInTheDocument();
+  });
+
+  it("renders signal candidates as clickable buttons and sends the picked one", async () => {
+    (api.chat.status as any).mockResolvedValue({ available: true, reason: null });
+    (api.chat.createSession as any).mockResolvedValue({ id: "session-1" });
+    (api.chat.sendMessage as any).mockResolvedValueOnce({
+      reply: "Encontré varias señales parecidas:",
+      dashboard_id: null,
+      actions: [],
+      candidates: [
+        { topic: "GALERNA/T01/GENERATOR", signal_key: "Gen_RPM_Max", signal_type: "kpi", unit: "rpm", description: null },
+        { topic: "GALERNA/T01/GENERATOR/_informative", signal_key: "Gen_RPM_Max_Raw", signal_type: "raw", unit: "rpm", description: null },
+      ],
+    });
+
+    render(<ChatPanel onDashboardCreated={() => {}} />);
+
+    const input = await screen.findByPlaceholderText("Describe el dashboard que quieres…");
+    fireEvent.change(input, { target: { value: "busca el rpm del generador" } });
+    fireEvent.click(screen.getByText("Enviar"));
+
+    const candidateButton = await screen.findByText(/Gen_RPM_Max\b/);
+    expect(candidateButton).toBeInTheDocument();
+    expect(screen.getByText(/Gen_RPM_Max_Raw/)).toBeInTheDocument();
+
+    (api.chat.sendMessage as any).mockResolvedValueOnce({
+      reply: "Perfecto, usaré esa.",
+      dashboard_id: null,
+      actions: [],
+      candidates: null,
+    });
+
+    fireEvent.click(candidateButton);
+
+    await waitFor(() =>
+      expect(api.chat.sendMessage).toHaveBeenLastCalledWith(
+        "session-1",
+        expect.stringContaining("Gen_RPM_Max")
+      )
+    );
+    expect(api.chat.sendMessage).toHaveBeenLastCalledWith(
+      "session-1",
+      expect.stringContaining("GALERNA/T01/GENERATOR")
+    );
   });
 });
