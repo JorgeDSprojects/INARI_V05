@@ -1,6 +1,29 @@
 # Chat Agent Signal Search & Candidate Disambiguation — Design
 
-**Status:** Approved (sections A/B/C confirmed in chat).
+**Status:** Approved (sections A/B/C confirmed in chat). Implemented with one
+known deviation, below.
+
+## Implementation deviation: candidates are not persisted into chat history
+
+Section B says candidates are "also persisted into the assistant's stored
+`ChatMessage.content` ... as an extra `candidates` key". The implementation
+does not do this — `chat_agent.py` persists `{"role": "assistant", "content":
+reply_text}` with no `candidates` key, so `ChatHistoryPanel` cannot show the
+options a past session presented.
+
+**Why this was not fixed as a quick patch (final whole-branch review
+ruling):** `app/routers/chat.py`'s `send_message` replays every stored
+`ChatMessage.content` dict verbatim back into `provider.send()` on the next
+turn. Every key currently in that dict is legal in the OpenAI wire format
+(`role`/`content`/`tool_calls`/`tool_call_id`). Adding a bare `candidates` key
+would feed an unrecognized field back to the provider on replay — safe with
+Ollama's tolerant parsing today, not guaranteed safe for a stricter provider
+(real OpenAI, or the anticipated Anthropic adapter, which needs its own
+translation layer regardless per Constraint 5 of the original chat-agent
+spec). Persisting candidates correctly needs a small history-sanitization
+step (either strip non-wire-format keys before replay, or persist candidates
+in a sibling field the replay path already knows to skip) — deferred as a
+follow-up, not implemented half-way.
 
 ## Problem
 
