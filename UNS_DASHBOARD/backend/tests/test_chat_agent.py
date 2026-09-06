@@ -2,6 +2,7 @@ import os
 
 import pytest
 import pytest_asyncio
+from sqlalchemy.future import select
 
 from app.database import AsyncSessionLocal, create_tables
 from app.services import chat_agent
@@ -113,6 +114,55 @@ async def test_write_tools_refuse_to_touch_a_published_dashboard(db):
     assert actions == []  # the tool call was rejected before it could count as a completed action
     tool_result_messages = [m for m in new_messages if m.get("role") == "tool"]
     assert "draft" in tool_result_messages[0]["content"].lower() or "publicado" in reply.lower() or "already published" in tool_result_messages[0]["content"].lower()
+
+
+@pytest.mark.asyncio
+async def test_update_chart_cannot_move_a_chart_into_a_published_dashboard_via_dashboard_id(db):
+    """Reproduces the mass-assignment attack found by the final review: a
+    crafted update_chart call carrying an extra "dashboard_id" argument must
+    NOT be able to move a chart out of its current draft dashboard into an
+    already-published one. _dispatch_write_tool must whitelist update_chart's
+    forwarded arguments against its own declared schema (name, color only)
+    rather than forwarding the LLM's raw argument dict straight into
+    chart_service.update_chart's unfiltered setattr.
+    """
+    from app.models.dashboard import Chart
+    from app.services import dashboard_service
+
+    draft_dashboard = await dashboard_service.create_dashboard(db, "pytest-attack-draft-dashboard")
+    published_dashboard = await dashboard_service.create_dashboard(db, "pytest-attack-published-dashboard")
+    await dashboard_service.publish_dashboard(db, published_dashboard.id)
+
+    create_provider = _ScriptedProvider([
+        ProviderResponse(text=None, tool_calls=[ToolCall(
+            id="1", name="add_chart",
+            arguments={
+                "dashboard_id": draft_dashboard.id, "name": "victim-chart",
+                "chart_type": "kpi", "data_mode": "live", "signals": [],
+            },
+        )]),
+        ProviderResponse(text="Listo.", tool_calls=[]),
+    ])
+    _, _, _, actions = await chat_agent.run_turn(
+        db, create_provider, [], "añade una gráfica al dashboard borrador", read_tools=[]
+    )
+    assert actions  # add_chart succeeded
+
+    result = await db.execute(select(Chart).where(Chart.dashboard_id == draft_dashboard.id))
+    chart = result.scalar_one()
+
+    attack_provider = _ScriptedProvider([
+        ProviderResponse(text=None, tool_calls=[ToolCall(
+            id="1", name="update_chart",
+            arguments={"chart_id": chart.id, "name": "renamed", "dashboard_id": published_dashboard.id},
+        )]),
+        ProviderResponse(text="Listo, actualizado.", tool_calls=[]),
+    ])
+    await chat_agent.run_turn(db, attack_provider, [], "actualiza esa gráfica", read_tools=[])
+
+    await db.refresh(chart)
+    assert chart.dashboard_id == draft_dashboard.id  # NOT moved into the published dashboard
+    assert chart.name == "renamed"  # the whitelisted field still applied normally
 
 
 @pytest.mark.asyncio

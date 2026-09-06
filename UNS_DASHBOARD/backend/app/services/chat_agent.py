@@ -106,13 +106,36 @@ _WRITE_TOOLS = [
 
 _WRITE_TOOL_NAMES = {t["function"]["name"] for t in _WRITE_TOOLS}
 
+# The primary key each write tool already consumes separately (as the target
+# id, e.g. `db.get(Dashboard, args["dashboard_id"])`) before any remaining
+# arguments are forwarded to chart_service/dashboard_service. Used by
+# _allowed_write_args to keep that primary key out of the forwarded dict --
+# most importantly, update_chart's schema never declares "dashboard_id" in
+# the first place, so it can never reach chart_service.update_chart's
+# unfiltered setattr via this path. See _dispatch_write_tool.
+_PRIMARY_KEY_BY_TOOL = {
+    "add_chart": "dashboard_id",
+    "update_chart": "chart_id",
+    "delete_chart": "chart_id",
+    "publish_dashboard": "dashboard_id",
+}
+
 _SYSTEM_PROMPT = (
     "You are a helpful assistant that builds SCADA dashboards for an industrial monitoring system. "
     "Use list_signals to discover what signals exist before referencing one -- never guess a signal_key. "
+    "IMPORTANT: list_signals' `topic_prefix` argument filters by MQTT TOPIC PATH -- the asset hierarchy, "
+    "like 'site/line/machine' -- and NOT by signal name. Never pass a signal name, a signal_key, or a "
+    "description as topic_prefix. To find a signal by name, call list_signals with the broadest topic "
+    "prefix you actually know (an empty string \"\" lists everything), then search the returned "
+    "signal_key/description fields yourself. An empty list_signals result only means nothing matched "
+    "THAT TOPIC PATH -- it never proves a named signal does not exist, so never tell the user a signal "
+    "is missing on the strength of one narrow list_signals call. "
     "Use get_current_value or get_historical_trend to check real data when useful. "
     "Use the write tools to create and edit the dashboard the user is describing. "
     "Always create a dashboard before adding charts to it if the conversation has not created one yet. "
     "Never call publish_dashboard unless the user explicitly asks to publish. "
+    "Never claim you have created or modified anything unless a tool call actually returned a result -- "
+    "if you intend to call a tool, emit a real tool call, never a description of one in your reply text. "
     "If the request is ambiguous, ask a clarifying question in plain text instead of guessing."
 )
 
@@ -189,6 +212,34 @@ async def run_turn(
     return timeout_reply, new_messages, dashboard_id, actions
 
 
+def _allowed_write_args(tool_name: str) -> dict:
+    """Whitelists an LLM tool call's arguments against that tool's own
+    declared JSON-schema `properties` (from _WRITE_TOOLS), minus whichever
+    key is already consumed separately as the primary target id.
+
+    This exists because chart_service.create_chart/update_chart do an
+    unfiltered Chart(**data)/setattr over whatever dict they're handed --
+    correct for the REST routers (which filter through a Pydantic model
+    first) but NOT safe to expose directly to an LLM's tool-call arguments,
+    which are attacker-influenced input. Without this, a crafted
+    update_chart call carrying an extra "dashboard_id" would move a chart
+    into an already-published dashboard, bypassing the draft-only guard
+    (which only checks the chart's CURRENT dashboard, not the target of the
+    move). Deriving the whitelist from the tool schema itself (rather than
+    hardcoding a list per tool) keeps it from silently drifting out of sync
+    if a tool's schema changes.
+    """
+    schema = next(t["function"]["parameters"] for t in _WRITE_TOOLS if t["function"]["name"] == tool_name)
+    allowed = set(schema.get("properties", {}))
+    allowed.discard(_PRIMARY_KEY_BY_TOOL.get(tool_name))
+    return allowed
+
+
+def _filter_write_args(tool_name: str, args: dict) -> dict:
+    allowed = _allowed_write_args(tool_name)
+    return {k: v for k, v in args.items() if k in allowed}
+
+
 async def _dispatch_write_tool(db: AsyncSession, name: str, args: dict) -> dict:
     # The chat only ever edits DRAFT dashboards (never a published one) --
     # this cannot live in dashboard_service/chart_service (Task 5), since
@@ -199,17 +250,18 @@ async def _dispatch_write_tool(db: AsyncSession, name: str, args: dict) -> dict:
         return {"id": dashboard.id, "name": dashboard.name}
     if name == "add_chart":
         await _ensure_dashboard_is_draft(db, args["dashboard_id"])
-        chart = await chart_service.create_chart(db, args["dashboard_id"], {k: v for k, v in args.items() if k != "dashboard_id"})
+        chart = await chart_service.create_chart(db, args["dashboard_id"], _filter_write_args("add_chart", args))
         return {"id": chart.id, "name": chart.name}
     if name == "update_chart":
         await _ensure_chart_dashboard_is_draft(db, args["chart_id"])
-        chart = await chart_service.update_chart(db, args["chart_id"], {k: v for k, v in args.items() if k != "chart_id"})
+        chart = await chart_service.update_chart(db, args["chart_id"], _filter_write_args("update_chart", args))
         return {"id": chart.id}
     if name == "delete_chart":
         await _ensure_chart_dashboard_is_draft(db, args["chart_id"])
         await chart_service.delete_chart(db, args["chart_id"])
         return {"deleted": args["chart_id"]}
     if name == "publish_dashboard":
+        await _ensure_dashboard_is_draft(db, args["dashboard_id"])
         dashboard = await dashboard_service.publish_dashboard(db, args["dashboard_id"])
         return {"id": dashboard.id, "status": dashboard.status}
     raise ValueError(f"Unknown write tool: {name}")
