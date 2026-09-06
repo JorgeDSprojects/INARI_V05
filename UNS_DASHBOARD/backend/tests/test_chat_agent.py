@@ -306,3 +306,91 @@ async def test_normal_write_tool_turn_returns_none_candidates(db):
     _, _, _, _, returned_candidates = await chat_agent.run_turn(db, provider, [], "hola", read_tools=[])
 
     assert returned_candidates is None
+
+
+@pytest.mark.asyncio
+async def test_present_signal_candidates_drops_malformed_entries_and_keeps_the_valid_one(db):
+    """A candidate missing signal_key, or with a non-string topic, must never
+    reach run_turn's return -- it would otherwise flow straight into
+    ChatMessageResponse(candidates=...) in app/routers/chat.py, which is
+    constructed AFTER await db.commit() already ran, turning a shape mismatch
+    into an unhandled 500 on a turn whose writes are already durable.
+    """
+    from app.schemas.chat import ChatMessageResponse
+
+    well_formed = {"topic": "GALERNA/T01/GENERATOR", "signal_key": "Gen_RPM_Max", "signal_type": "kpi", "unit": "rpm", "description": "Peak RPM"}
+    missing_signal_key = {"topic": "GALERNA/T01/GENERATOR/_informative", "signal_type": "raw"}
+    topic_not_a_string = {"topic": 123, "signal_key": "Gen_RPM_Other"}
+    candidates = [well_formed, missing_signal_key, topic_not_a_string]
+
+    provider = _ScriptedProvider([
+        ProviderResponse(text=None, tool_calls=[ToolCall(id="1", name="present_signal_candidates", arguments={"candidates": candidates})]),
+    ])
+
+    reply, new_messages, dashboard_id, actions, returned_candidates = await chat_agent.run_turn(
+        db, provider, [], "busca el rpm del generador", read_tools=[]
+    )
+
+    assert returned_candidates == [well_formed]  # malformed entries silently dropped
+
+    # Proves the fix closes the actually-reported bug: constructing the
+    # response the router builds AFTER commit must not raise.
+    response = ChatMessageResponse(reply=reply, dashboard_id=dashboard_id, actions=actions, candidates=returned_candidates)
+    assert len(response.candidates) == 1
+    assert response.candidates[0].signal_key == "Gen_RPM_Max"
+
+
+@pytest.mark.asyncio
+async def test_present_signal_candidates_with_all_malformed_entries_is_rejected_as_a_tool_error(db):
+    all_malformed = [
+        {"topic": "GALERNA/T01/GENERATOR"},  # missing signal_key
+        {"topic": 42, "signal_key": "Gen_RPM_Max"},  # topic not a string
+        {"signal_key": ""},  # empty signal_key, and missing topic
+    ]
+    provider = _ScriptedProvider([
+        ProviderResponse(text=None, tool_calls=[ToolCall(id="1", name="present_signal_candidates", arguments={"candidates": all_malformed})]),
+        ProviderResponse(text="Perdona, no encontré nada. ¿Puedes darme más detalles?", tool_calls=[]),
+    ])
+
+    reply, new_messages, dashboard_id, actions, returned_candidates = await chat_agent.run_turn(
+        db, provider, [], "busca algo", read_tools=[]
+    )
+
+    assert returned_candidates is None  # rejected, never surfaced to the user
+    assert len(provider.calls) == 2  # the loop continued after the rejection
+    tool_result_messages = [m for m in new_messages if m.get("role") == "tool"]
+    assert "empty" in tool_result_messages[0]["content"].lower() or "error" in tool_result_messages[0]["content"].lower()
+
+
+@pytest.mark.asyncio
+async def test_present_signal_candidates_answers_a_trailing_tool_call_in_the_same_batch(db):
+    """When the model's tool_calls list contains present_signal_candidates
+    followed by another tool call, run_turn returns early (bypassing the rest
+    of the loop for this iteration) -- but every tool_call_id advertised in
+    the persisted assistant message must still get exactly one tool-result
+    message, or a stricter future provider replaying this history would see
+    an unanswered tool call and refuse it.
+    """
+    candidates = [
+        {"topic": "GALERNA/T01/GENERATOR", "signal_key": "Gen_RPM_Max", "signal_type": "kpi", "unit": "rpm", "description": "Peak RPM"},
+    ]
+    provider = _ScriptedProvider([
+        ProviderResponse(text=None, tool_calls=[
+            ToolCall(id="1", name="present_signal_candidates", arguments={"candidates": candidates}),
+            ToolCall(id="2", name="list_signals", arguments={"topic_prefix": "GALERNA/T01"}),
+        ]),
+    ])
+
+    reply, new_messages, dashboard_id, actions, returned_candidates = await chat_agent.run_turn(
+        db, provider, [], "busca el rpm del generador", read_tools=[]
+    )
+
+    assert returned_candidates == candidates
+    assert len(provider.calls) == 1  # the turn ended immediately, no further loop iteration
+
+    assistant_message = next(m for m in new_messages if m.get("role") == "assistant" and "tool_calls" in m)
+    advertised_ids = {tc["id"] for tc in assistant_message["tool_calls"]}
+    assert advertised_ids == {"1", "2"}
+
+    answered_ids = {m["tool_call_id"] for m in new_messages if m.get("role") == "tool"}
+    assert answered_ids == advertised_ids  # every advertised tool_call_id got exactly one tool-result message

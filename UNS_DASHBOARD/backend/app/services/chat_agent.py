@@ -249,9 +249,24 @@ async def run_turn(
         messages.append(assistant_message)
         new_messages.append(assistant_message)
 
-        for tc in response.tool_calls:
+        for i, tc in enumerate(response.tool_calls):
             if tc.name == _PRESENT_CANDIDATES_TOOL_NAME:
-                candidates = tc.arguments.get("candidates") or []
+                raw_candidates = tc.arguments.get("candidates") or []
+                # Validate shape, not just non-emptiness -- a malformed entry
+                # (missing signal_key, a non-string topic, etc.) would otherwise
+                # flow through run_turn's return into
+                # ChatMessageResponse(candidates=...) in app/routers/chat.py,
+                # which is constructed AFTER await db.commit() already ran --
+                # a Pydantic validation error there is an unhandled 500 on a
+                # turn whose writes are already durable. Required fields per
+                # this tool's own schema and per SignalCandidate: topic,
+                # signal_key, both non-empty strings.
+                candidates = [
+                    c for c in raw_candidates
+                    if isinstance(c, dict)
+                    and isinstance(c.get("topic"), str) and c.get("topic")
+                    and isinstance(c.get("signal_key"), str) and c.get("signal_key")
+                ]
                 if not candidates:
                     result = {"error": "candidates must not be an empty list -- either present at least one, or answer directly without calling this tool"}
                     tool_message = {"role": "tool", "tool_call_id": tc.id, "content": json.dumps(result, default=str)}
@@ -264,6 +279,23 @@ async def run_turn(
                 tool_message = {"role": "tool", "tool_call_id": tc.id, "content": json.dumps(result, default=str)}
                 messages.append(tool_message)
                 new_messages.append(tool_message)
+
+                # Any tool call still remaining in this same batch after
+                # present_signal_candidates never gets processed, since we
+                # return immediately below -- but its tool_call_id was already
+                # persisted as part of the assistant message's tool_calls
+                # array above. Answer each with a synthetic skip result so no
+                # tool_call_id is ever left unanswered in the stored history
+                # (harmless under the current provider, which never replays
+                # this turn's history back to itself, but a future stricter
+                # provider enforcing tool-call/tool-result pairing would
+                # otherwise break permanently on this session).
+                for skipped_tc in response.tool_calls[i + 1:]:
+                    skip_result = {"error": "skipped: the turn ended to present signal candidates to the user"}
+                    skip_message = {"role": "tool", "tool_call_id": skipped_tc.id, "content": json.dumps(skip_result)}
+                    messages.append(skip_message)
+                    new_messages.append(skip_message)
+
                 reply_text = response.text or "Aquí tienes varias opciones, elige la que buscas:"
                 assistant_reply_message = {"role": "assistant", "content": reply_text}
                 new_messages.append(assistant_reply_message)
