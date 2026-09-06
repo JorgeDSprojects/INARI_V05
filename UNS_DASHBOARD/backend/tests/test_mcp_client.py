@@ -21,10 +21,16 @@ def _configure(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_list_read_tools_returns_all_four_uns_mcp_tools():
+async def test_list_read_tools_returns_all_five_uns_mcp_tools():
     tools = await mcp_client.list_read_tools()
     names = {t["function"]["name"] for t in tools}
-    assert names == {"get_current_value", "get_historical_trend", "list_signals", "list_active_alarms"}
+    assert names == {
+        "get_current_value",
+        "get_historical_trend",
+        "list_signals",
+        "list_active_alarms",
+        "search_signals",
+    }
     for t in tools:
         assert t["type"] == "function"
         assert "parameters" in t["function"]
