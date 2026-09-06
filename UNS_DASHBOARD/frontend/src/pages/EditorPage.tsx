@@ -78,6 +78,7 @@ export function EditorPage() {
         <ChatHistoryPanel dashboardId={dashboard.id} />
         <div className="flex-1 min-h-[16rem]">
           <ChatPanel
+            key={dashboard.id}
             dashboardId={dashboard.id}
             onDashboardCreated={(dashboardId) => navigate(`/dashboards/${dashboardId}/edit`)}
             onDashboardChanged={load}
