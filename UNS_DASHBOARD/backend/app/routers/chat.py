@@ -6,7 +6,7 @@ Section 3.
 from __future__ import annotations
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
@@ -14,11 +14,14 @@ from sqlalchemy.orm import selectinload
 from app.config import settings
 from app.database import get_db
 from app.models.chat import ChatMessage, ChatSession
+from app.models.dashboard import Dashboard
 from app.schemas.chat import (
     ChatMessageRequest,
     ChatMessageResponse,
+    ChatSessionCreate,
     ChatSessionCreated,
     ChatSessionRead,
+    ChatSessionSummary,
     ChatStatus,
 )
 from app.services import chat_agent, mcp_client
@@ -76,12 +79,43 @@ async def chat_status():
 
 
 @router.post("/sessions", response_model=ChatSessionCreated, status_code=201)
-async def create_session(db: AsyncSession = Depends(get_db)):
-    session = ChatSession()
+async def create_session(
+    body: ChatSessionCreate | None = Body(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    dashboard_id = body.dashboard_id if body else None
+    if dashboard_id is not None:
+        dashboard = await db.get(Dashboard, dashboard_id)
+        if not dashboard:
+            raise HTTPException(status_code=404, detail="Dashboard not found")
+    session = ChatSession(dashboard_id=dashboard_id)
     db.add(session)
     await db.commit()
     await db.refresh(session)
     return ChatSessionCreated(id=session.id)
+
+
+@router.get("/sessions", response_model=list[ChatSessionSummary])
+async def list_sessions(dashboard_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(ChatSession)
+        .where(ChatSession.dashboard_id == dashboard_id)
+        .options(selectinload(ChatSession.messages))
+        .order_by(ChatSession.created_at.desc())
+    )
+    sessions = result.scalars().all()
+    summaries = []
+    for s in sessions:
+        first_user_message = next(
+            (
+                m.content.get("content")
+                for m in s.messages
+                if m.role == "user" and isinstance(m.content.get("content"), str)
+            ),
+            None,
+        )
+        summaries.append(ChatSessionSummary(id=s.id, created_at=s.created_at, first_user_message=first_user_message))
+    return summaries
 
 
 @router.get("/sessions/{session_id}", response_model=ChatSessionRead)
@@ -112,7 +146,9 @@ async def send_message(session_id: str, body: ChatMessageRequest, db: AsyncSessi
 
     try:
         try:
-            reply, new_messages, dashboard_id, actions = await chat_agent.run_turn(db, provider, history, body.message)
+            reply, new_messages, dashboard_id, actions = await chat_agent.run_turn(
+                db, provider, history, body.message, current_dashboard_id=session.dashboard_id
+            )
         except Exception as exc:  # noqa: BLE001
             # run_turn can fail mid-loop (e.g. the provider becomes unreachable
             # after already making write-tool calls that committed via their

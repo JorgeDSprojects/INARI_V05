@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
@@ -11,8 +12,18 @@ class ChatStatus(BaseModel):
     reason: str | None
 
 
+class ChatSessionCreate(BaseModel):
+    dashboard_id: str | None = None
+
+
 class ChatSessionCreated(BaseModel):
     id: str
+
+
+class ChatSessionSummary(BaseModel):
+    id: str
+    created_at: datetime
+    first_user_message: str | None
 
 
 class ChatMessageRequest(BaseModel):

@@ -1,3 +1,4 @@
+import json
 import os
 
 import pytest
@@ -163,6 +164,73 @@ async def test_update_chart_cannot_move_a_chart_into_a_published_dashboard_via_d
     await db.refresh(chart)
     assert chart.dashboard_id == draft_dashboard.id  # NOT moved into the published dashboard
     assert chart.name == "renamed"  # the whitelisted field still applied normally
+
+
+@pytest.mark.asyncio
+async def test_system_prompt_mentions_the_currently_edited_dashboard(db):
+    from app.services import dashboard_service
+
+    dashboard = await dashboard_service.create_dashboard(db, "pytest-current-dashboard")
+
+    provider = _ScriptedProvider([ProviderResponse(text="ok", tool_calls=[])])
+    await chat_agent.run_turn(db, provider, [], "hola", read_tools=[], current_dashboard_id=dashboard.id)
+
+    system_message = provider.calls[0][0][0]
+    assert system_message["role"] == "system"
+    assert dashboard.name in system_message["content"]
+
+
+@pytest.mark.asyncio
+async def test_add_chart_against_current_dashboard_id_does_not_require_create_dashboard(db):
+    from app.services import dashboard_service
+
+    dashboard = await dashboard_service.create_dashboard(db, "pytest-current-dashboard-add-chart")
+
+    provider = _ScriptedProvider([
+        ProviderResponse(text=None, tool_calls=[ToolCall(
+            id="1", name="add_chart",
+            arguments={
+                "dashboard_id": dashboard.id, "name": "rpm gauge",
+                "chart_type": "gauge", "data_mode": "live", "signals": [],
+            },
+        )]),
+        ProviderResponse(text="Listo, he añadido la gráfica.", tool_calls=[]),
+    ])
+
+    reply, new_messages, dashboard_id, actions = await chat_agent.run_turn(
+        db, provider, [], "añade un gauge de RPM", read_tools=[], current_dashboard_id=dashboard.id
+    )
+
+    assert dashboard_id == dashboard.id  # reflects the pre-existing id, not None
+    assert any("add_chart" in a for a in actions)
+    assert not any("create_dashboard" in a for a in actions)
+
+
+@pytest.mark.asyncio
+async def test_duplicate_create_dashboard_calls_in_one_turn_are_idempotent(db):
+    from app.models.dashboard import Dashboard
+
+    provider = _ScriptedProvider([
+        ProviderResponse(text=None, tool_calls=[
+            ToolCall(id="1", name="create_dashboard", arguments={"name": "pytest-dup-dashboard"}),
+            ToolCall(id="2", name="create_dashboard", arguments={"name": "pytest-dup-dashboard"}),
+        ]),
+        ProviderResponse(text="Listo, he creado el dashboard.", tool_calls=[]),
+    ])
+
+    reply, new_messages, dashboard_id, actions = await chat_agent.run_turn(
+        db, provider, [], "crea un dashboard llamado pytest-dup-dashboard", read_tools=[]
+    )
+
+    result = await db.execute(select(Dashboard).where(Dashboard.name == "pytest-dup-dashboard"))
+    dashboards = result.scalars().all()
+    assert len(dashboards) == 1  # only one dashboard actually created
+
+    tool_result_messages = [m for m in new_messages if m.get("role") == "tool"]
+    assert len(tool_result_messages) == 2
+    first_id = json.loads(tool_result_messages[0]["content"])["id"]
+    second_id = json.loads(tool_result_messages[1]["content"])["id"]
+    assert first_id == second_id == dashboards[0].id
 
 
 @pytest.mark.asyncio

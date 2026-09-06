@@ -130,6 +130,11 @@ _SYSTEM_PROMPT = (
     "signal_key/description fields yourself. An empty list_signals result only means nothing matched "
     "THAT TOPIC PATH -- it never proves a named signal does not exist, so never tell the user a signal "
     "is missing on the strength of one narrow list_signals call. "
+    "CRITICAL: if your FIRST list_signals call (with any specific topic_prefix guess) returns an empty "
+    "result, you MUST immediately call list_signals again with topic_prefix=\"\" in the SAME turn before "
+    "saying anything to the user -- do not try a second or third narrow guess, and do not conclude a "
+    "signal is missing after only narrow attempts. Only after a topic_prefix=\"\" call also fails to "
+    "surface anything plausible should you tell the user you couldn't find it. "
     "Use get_current_value or get_historical_trend to check real data when useful. "
     "Use the write tools to create and edit the dashboard the user is describing. "
     "Always create a dashboard before adding charts to it if the conversation has not created one yet. "
@@ -140,12 +145,27 @@ _SYSTEM_PROMPT = (
 )
 
 
+async def _build_system_prompt(db: AsyncSession, current_dashboard_id: str | None) -> str:
+    prompt = _SYSTEM_PROMPT
+    if current_dashboard_id:
+        dashboard = await db.get(Dashboard, current_dashboard_id)
+        if dashboard is not None:
+            prompt += (
+                f" The user is currently editing dashboard '{dashboard.name}' (id: {dashboard.id}, "
+                f"status: {dashboard.status}). Prefer adding, updating, or deleting charts on THIS "
+                "dashboard using add_chart/update_chart/delete_chart -- do NOT call create_dashboard "
+                "unless the user clearly asks you to create a separate, additional dashboard."
+            )
+    return prompt
+
+
 async def run_turn(
     db: AsyncSession,
     provider: LLMProvider,
     history: list[dict],
     user_message: str,
     read_tools: list[dict] | None = None,
+    current_dashboard_id: str | None = None,
 ) -> tuple[str, list[dict], str | None, list[str]]:
     if read_tools is None:
         read_tools = await mcp_client.list_read_tools()
@@ -153,14 +173,15 @@ async def run_turn(
 
     messages = list(history)
     if not any(m.get("role") == "system" for m in messages):
-        messages = [{"role": "system", "content": _SYSTEM_PROMPT}] + messages
+        messages = [{"role": "system", "content": await _build_system_prompt(db, current_dashboard_id)}] + messages
 
     user_turn = {"role": "user", "content": user_message}
     messages.append(user_turn)
     new_messages: list[dict] = [user_turn]
 
-    dashboard_id: str | None = None
+    dashboard_id: str | None = current_dashboard_id
     actions: list[str] = []
+    created_dashboards_this_turn: dict[str, dict] = {}
 
     for _ in range(_MAX_ITERATIONS):
         response = await provider.send(messages, tools)
@@ -189,7 +210,7 @@ async def run_turn(
         for tc in response.tool_calls:
             try:
                 if tc.name in _WRITE_TOOL_NAMES:
-                    result = await _dispatch_write_tool(db, tc.name, tc.arguments)
+                    result = await _dispatch_write_tool(db, tc.name, tc.arguments, created_dashboards_this_turn)
                     if tc.name == "create_dashboard":
                         dashboard_id = result["id"]
                     args_repr = ", ".join(f"{k}={v!r}" for k, v in tc.arguments.items())
@@ -240,14 +261,29 @@ def _filter_write_args(tool_name: str, args: dict) -> dict:
     return {k: v for k, v in args.items() if k in allowed}
 
 
-async def _dispatch_write_tool(db: AsyncSession, name: str, args: dict) -> dict:
+async def _dispatch_write_tool(
+    db: AsyncSession, name: str, args: dict, created_dashboards_this_turn: dict[str, dict]
+) -> dict:
     # The chat only ever edits DRAFT dashboards (never a published one) --
     # this cannot live in dashboard_service/chart_service (Task 5), since
     # those are shared with the existing REST API, which has no such
     # restriction today and must keep behaving exactly as it does now.
     if name == "create_dashboard":
+        # A model can (and, in a real observed conversation, did) emit a
+        # second create_dashboard call with the SAME name within one turn --
+        # e.g. after already seeing the first call's result on a later loop
+        # iteration, it re-emits the create instead of only add_chart. Without
+        # this guard that produces a second, empty, duplicate dashboard while
+        # the correctly-configured charts stay attached to the first (now
+        # orphaned) one. Keyed by name only (this turn's scope), so a
+        # legitimate second dashboard with a different name is unaffected.
+        existing = created_dashboards_this_turn.get(args["name"])
+        if existing is not None:
+            return existing
         dashboard = await dashboard_service.create_dashboard(db, args["name"], args.get("description"))
-        return {"id": dashboard.id, "name": dashboard.name}
+        result = {"id": dashboard.id, "name": dashboard.name}
+        created_dashboards_this_turn[args["name"]] = result
+        return result
     if name == "add_chart":
         await _ensure_dashboard_is_draft(db, args["dashboard_id"])
         chart = await chart_service.create_chart(db, args["dashboard_id"], _filter_write_args("add_chart", args))
