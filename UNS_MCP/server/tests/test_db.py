@@ -266,3 +266,80 @@ def test_list_active_alarms_returns_only_latest_snapshot(conn):
 def test_list_active_alarms_empty_when_none(conn):
     _, reader_conn = conn
     assert list_active_alarms(reader_conn, "pytest/no/alarms/here") == []
+
+
+def test_search_signals_matches_case_insensitively_across_topic_signal_key_and_description(conn):
+    seed_conn, reader_conn = conn
+    now = datetime(2026, 9, 5, 12, 0, 0, tzinfo=timezone.utc)
+    seed_conn.execute(
+        "INSERT INTO signal_catalog (topic, signal_key, signal_type, unit, description, effective_since) "
+        "VALUES (%s,%s,%s,%s,%s,%s)",
+        ("pytest/T01/GENERATOR", "Gen_RPM_Max", "kpi", "rpm", "Maximum generator RPM", now),
+    )
+    seed_conn.commit()
+
+    from app.db import search_signals
+
+    # Matches via the topic segment, case-insensitively, even though it's not a prefix.
+    result = search_signals(reader_conn, "generator")
+    assert any(r["signal_key"] == "Gen_RPM_Max" for r in result)
+
+    # Matches via signal_key substring.
+    result = search_signals(reader_conn, "rpm_max")
+    assert any(r["signal_key"] == "Gen_RPM_Max" for r in result)
+
+    # Matches via description substring.
+    result = search_signals(reader_conn, "maximum")
+    assert any(r["signal_key"] == "Gen_RPM_Max" for r in result)
+
+
+def test_search_signals_scores_signal_key_matches_above_description_only_matches(conn):
+    seed_conn, reader_conn = conn
+    now = datetime(2026, 9, 5, 12, 0, 0, tzinfo=timezone.utc)
+    seed_conn.execute(
+        "INSERT INTO signal_catalog (topic, signal_key, signal_type, description, effective_since) "
+        "VALUES (%s,%s,%s,%s,%s)",
+        ("pytest/T01/GENERATOR", "Gen_RPM_Max", "kpi", "Peak generator speed", now),
+    )
+    seed_conn.execute(
+        "INSERT INTO signal_catalog (topic, signal_key, signal_type, description, effective_since) "
+        "VALUES (%s,%s,%s,%s,%s)",
+        ("pytest/T01/MOTOR", "Motor_Status", "raw", "Reports rpm in its notes field", now),
+    )
+    seed_conn.commit()
+
+    from app.db import search_signals
+
+    result = search_signals(reader_conn, "rpm")
+    keys_in_order = [r["signal_key"] for r in result if r["signal_key"] in ("Gen_RPM_Max", "Motor_Status")]
+    assert keys_in_order == ["Gen_RPM_Max", "Motor_Status"]
+
+
+def test_search_signals_respects_limit_and_excludes_superseded_rows(conn):
+    seed_conn, reader_conn = conn
+    now = datetime(2026, 9, 5, 12, 0, 0, tzinfo=timezone.utc)
+    for i in range(5):
+        seed_conn.execute(
+            "INSERT INTO signal_catalog (topic, signal_key, signal_type, effective_since) VALUES (%s,%s,%s,%s)",
+            (f"pytest/T0{i}/GENERATOR", f"Gen_RPM_{i}", "kpi", now),
+        )
+    seed_conn.execute(
+        "INSERT INTO signal_catalog (topic, signal_key, signal_type, effective_since, effective_until) "
+        "VALUES (%s,%s,%s,%s,%s)",
+        ("pytest/T09/GENERATOR", "Gen_RPM_Superseded", "kpi", now, now),
+    )
+    seed_conn.commit()
+
+    from app.db import search_signals
+
+    result = search_signals(reader_conn, "rpm", limit=3)
+    assert len(result) == 3
+    assert not any(r["signal_key"] == "Gen_RPM_Superseded" for r in result)
+
+
+def test_search_signals_returns_empty_list_for_no_match(conn):
+    seed_conn, reader_conn = conn
+
+    from app.db import search_signals
+
+    assert search_signals(reader_conn, "pytest-nonexistent-keyword-xyz") == []

@@ -5,7 +5,7 @@ import psycopg
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
-from app.server import get_current_value, get_historical_trend, list_active_alarms, list_signals
+from app.server import get_current_value, get_historical_trend, list_active_alarms, list_signals, search_signals
 
 DATABASE_URL = os.environ.get("SILVER_DATABASE_URL")
 SEED_DATABASE_URL = os.environ.get("SEED_DATABASE_URL")
@@ -94,3 +94,17 @@ def test_list_signals_tool_returns_list(seed_conn):
 
 def test_list_active_alarms_tool_returns_empty_list_when_none(seed_conn):
     assert list_active_alarms(topic="pytest/no/alarms") == []
+
+
+def test_search_signals_tool_finds_a_signal_by_keyword_not_prefix(seed_conn):
+    now = datetime(2026, 9, 5, 12, 0, 0, tzinfo=timezone.utc)
+    seed_conn.execute(
+        "INSERT INTO signal_catalog (topic, signal_key, signal_type, effective_since) VALUES (%s,%s,%s,%s)",
+        ("pytest/T01/GENERATOR", "Gen_RPM_Max", "kpi", now),
+    )
+    seed_conn.commit()
+
+    # "generator" is a SUFFIX of the topic, not a prefix -- list_signals(topic_prefix=...)
+    # could never find this; search_signals must, since that's the whole point of this tool.
+    result = search_signals(query="generator")
+    assert any(r["signal_key"] == "Gen_RPM_Max" for r in result)

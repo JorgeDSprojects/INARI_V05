@@ -175,3 +175,47 @@ def list_active_alarms(conn: psycopg.Connection, topic: str) -> list[dict[str, A
             (topic, topic),
         )
         return [r[0] for r in cur.fetchall()]
+
+
+def search_signals(conn: psycopg.Connection, query: str, limit: int = 10) -> list[dict[str, Any]]:
+    """Case-insensitive substring search across signal_key, description, and
+    the full topic path -- unlike list_signals' path-PREFIX filter, this finds
+    a signal by name or partial name regardless of where it sits in the
+    asset hierarchy. Splits `query` into words; a row scores points for each
+    word that matches signal_key (3), topic (2), or description (1), summed
+    across words. Only currently-active rows (effective_until IS NULL) are
+    considered."""
+    words = [w for w in query.strip().split() if w]
+    if not words:
+        return []
+
+    conditions: list[str] = []
+    score_parts: list[str] = []
+    params: dict[str, Any] = {"limit": limit}
+    for i, word in enumerate(words):
+        key = f"w{i}"
+        params[key] = f"%{word}%"
+        conditions.append(f"(signal_key ILIKE %({key})s OR topic ILIKE %({key})s OR description ILIKE %({key})s)")
+        score_parts.append(
+            f"(CASE WHEN signal_key ILIKE %({key})s THEN 3 "
+            f"WHEN topic ILIKE %({key})s THEN 2 "
+            f"WHEN description ILIKE %({key})s THEN 1 ELSE 0 END)"
+        )
+    where_clause = " OR ".join(conditions)
+    score_expr = " + ".join(score_parts)
+
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT topic, signal_key, signal_type, unit, description, ({score_expr}) AS score
+            FROM signal_catalog
+            WHERE effective_until IS NULL AND ({where_clause})
+            ORDER BY score DESC, topic, signal_key
+            LIMIT %(limit)s
+            """,
+            params,
+        )
+        return [
+            {"topic": r[0], "signal_key": r[1], "signal_type": r[2], "unit": r[3], "description": r[4], "score": r[5]}
+            for r in cur.fetchall()
+        ]

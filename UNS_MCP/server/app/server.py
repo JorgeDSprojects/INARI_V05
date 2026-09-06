@@ -95,3 +95,20 @@ def list_active_alarms(topic: str) -> list[dict]:
         return db.list_active_alarms(conn, topic)
     finally:
         conn.close()
+
+
+@mcp.tool()
+def search_signals(query: str, limit: int = 10) -> list[dict]:
+    """Find signals by NAME or KEYWORD -- unlike list_signals' topic_prefix
+    (which only matches from the start of the asset-hierarchy path), this
+    matches a substring anywhere in signal_key, description, or the full
+    topic, case-insensitively. Use this whenever you're searching for a
+    signal by what it's called rather than by a known asset path. Pass a
+    few keywords (e.g. "generator rpm"), not a full sentence -- each word is
+    matched independently and scored, so unrelated filler words dilute the
+    ranking. Results are ordered by relevance, most likely match first."""
+    conn = _connect()
+    try:
+        return db.search_signals(conn, query, limit)
+    finally:
+        conn.close()
