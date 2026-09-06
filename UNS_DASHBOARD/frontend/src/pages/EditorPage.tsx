@@ -5,6 +5,7 @@ import { GridWorkspace } from "../components/editor/GridWorkspace";
 import { DashboardMetaForm } from "../components/editor/DashboardMetaForm";
 import { ChartForm } from "../components/editor/ChartForm";
 import { ChatPanel } from "../components/editor/ChatPanel";
+import { ChatHistoryPanel } from "../components/editor/ChatHistoryPanel";
 import { ChartRenderer } from "../components/ChartRenderer";
 import type { Chart, DashboardDetail } from "../types/dashboard";
 
@@ -74,8 +75,10 @@ export function EditorPage() {
         <button onClick={publish} className="bg-accent text-white rounded-lg py-3 font-bold">
           Publicar dashboard
         </button>
+        <ChatHistoryPanel dashboardId={dashboard.id} />
         <div className="flex-1 min-h-[16rem]">
           <ChatPanel
+            dashboardId={dashboard.id}
             onDashboardCreated={(dashboardId) => navigate(`/dashboards/${dashboardId}/edit`)}
             onDashboardChanged={load}
           />

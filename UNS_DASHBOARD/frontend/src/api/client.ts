@@ -3,6 +3,7 @@ import type {
   Chart,
   ChatMessageResult,
   ChatSessionDetail,
+  ChatSessionSummary,
   ChatStatus,
   Dashboard,
   DashboardDetail,
@@ -44,7 +45,10 @@ export const api = {
   },
   chat: {
     status: () => http.get<ChatStatus>("/chat/status").then((r) => r.data),
-    createSession: () => http.post<{ id: string }>("/chat/sessions").then((r) => r.data),
+    createSession: (dashboardId?: string) =>
+      http.post<{ id: string }>("/chat/sessions", dashboardId ? { dashboard_id: dashboardId } : undefined).then((r) => r.data),
+    listSessions: (dashboardId: string) =>
+      http.get<ChatSessionSummary[]>("/chat/sessions", { params: { dashboard_id: dashboardId } }).then((r) => r.data),
     getSession: (id: string) => http.get<ChatSessionDetail>(`/chat/sessions/${id}`).then((r) => r.data),
     sendMessage: (sessionId: string, message: string) =>
       http.post<ChatMessageResult>(`/chat/sessions/${sessionId}/messages`, { message }).then((r) => r.data),

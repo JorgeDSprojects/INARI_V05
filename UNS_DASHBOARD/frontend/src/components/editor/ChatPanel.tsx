@@ -3,9 +3,17 @@ import { api } from "../../api/client";
 import type { ChatMessage } from "../../types/dashboard";
 
 export function ChatPanel({
+  dashboardId,
   onDashboardCreated,
   onDashboardChanged,
 }: {
+  /** The dashboard the user is currently editing, if any. Passed through to
+   * the new session so the model knows to prefer editing THIS dashboard
+   * instead of defaulting to creating a brand new one (see chat_agent's
+   * _build_system_prompt). Also seeds reportedDashboardIdRef below, so the
+   * panel doesn't mistake the chat successfully editing the dashboard the
+   * user is already looking at for a brand new dashboard needing navigation. */
+  dashboardId?: string;
   onDashboardCreated: (dashboardId: string) => void;
   /** Called whenever a turn changed something (actions is non-empty) on a
    * dashboard this session had already reported before -- i.e. every turn
@@ -23,7 +31,7 @@ export function ChatPanel({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const reportedDashboardIdRef = useRef<string | null>(null);
+  const reportedDashboardIdRef = useRef<string | null>(dashboardId ?? null);
 
   useEffect(() => {
     api.chat.status().then(setStatus).catch(() => setStatus({ available: false, reason: "No se pudo comprobar el estado del asistente." }));
@@ -32,11 +40,11 @@ export function ChatPanel({
   useEffect(() => {
     if (status?.available && !sessionId) {
       api.chat
-        .createSession()
+        .createSession(dashboardId)
         .then((s) => setSessionId(s.id))
         .catch(() => setStatus({ available: false, reason: "No se pudo iniciar la sesión de chat." }));
     }
-  }, [status, sessionId]);
+  }, [status, sessionId, dashboardId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });

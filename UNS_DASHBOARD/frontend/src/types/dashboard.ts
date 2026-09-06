@@ -82,6 +82,12 @@ export interface ChatSessionDetail {
   messages: ChatMessage[];
 }
 
+export interface ChatSessionSummary {
+  id: string;
+  created_at: string;
+  first_user_message: string | null;
+}
+
 export interface ChatMessageResult {
   reply: string;
   dashboard_id: string | null;
