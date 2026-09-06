@@ -39,7 +39,7 @@ async def db():
 async def test_final_text_reply_with_no_tool_calls(db):
     provider = _ScriptedProvider([ProviderResponse(text="Hola, ¿qué quieres crear?", tool_calls=[])])
 
-    reply, new_messages, dashboard_id, actions = await chat_agent.run_turn(db, provider, [], "hola", read_tools=[])
+    reply, new_messages, dashboard_id, actions, _ = await chat_agent.run_turn(db, provider, [], "hola", read_tools=[])
 
     assert reply == "Hola, ¿qué quieres crear?"
     assert dashboard_id is None
@@ -54,7 +54,7 @@ async def test_create_dashboard_tool_call_binds_dashboard_id(db):
         ProviderResponse(text="Listo, he creado el dashboard.", tool_calls=[]),
     ])
 
-    reply, new_messages, dashboard_id, actions = await chat_agent.run_turn(
+    reply, new_messages, dashboard_id, actions, _ = await chat_agent.run_turn(
         db, provider, [], "crea un dashboard llamado pytest-chat-dash", read_tools=[]
     )
 
@@ -70,7 +70,7 @@ async def test_unknown_write_tool_result_fed_back_as_tool_error_not_raised(db):
         ProviderResponse(text="No encontré ese dashboard.", tool_calls=[]),
     ])
 
-    reply, new_messages, dashboard_id, actions = await chat_agent.run_turn(db, provider, [], "publica ese dashboard", read_tools=[])
+    reply, new_messages, dashboard_id, actions, _ = await chat_agent.run_turn(db, provider, [], "publica ese dashboard", read_tools=[])
 
     assert reply == "No encontré ese dashboard."
     tool_result_messages = [m for m in new_messages if m.get("role") == "tool"]
@@ -87,7 +87,7 @@ async def test_loop_is_bounded_and_returns_a_graceful_message(db):
     ]
     provider = _ScriptedProvider(responses)
 
-    reply, new_messages, dashboard_id, actions = await chat_agent.run_turn(db, provider, [], "haz algo ambiguo", read_tools=[])
+    reply, new_messages, dashboard_id, actions, _ = await chat_agent.run_turn(db, provider, [], "haz algo ambiguo", read_tools=[])
 
     assert "no pude completar" in reply.lower()
     assert len(provider.calls) == 8
@@ -108,7 +108,7 @@ async def test_write_tools_refuse_to_touch_a_published_dashboard(db):
         ProviderResponse(text="Ese dashboard ya está publicado, no puedo editarlo desde el chat.", tool_calls=[]),
     ])
 
-    reply, new_messages, dashboard_id, actions = await chat_agent.run_turn(
+    reply, new_messages, dashboard_id, actions, _ = await chat_agent.run_turn(
         db, provider, [], "añade una gráfica a ese dashboard publicado", read_tools=[]
     )
 
@@ -144,7 +144,7 @@ async def test_update_chart_cannot_move_a_chart_into_a_published_dashboard_via_d
         )]),
         ProviderResponse(text="Listo.", tool_calls=[]),
     ])
-    _, _, _, actions = await chat_agent.run_turn(
+    _, _, _, actions, _ = await chat_agent.run_turn(
         db, create_provider, [], "añade una gráfica al dashboard borrador", read_tools=[]
     )
     assert actions  # add_chart succeeded
@@ -197,7 +197,7 @@ async def test_add_chart_against_current_dashboard_id_does_not_require_create_da
         ProviderResponse(text="Listo, he añadido la gráfica.", tool_calls=[]),
     ])
 
-    reply, new_messages, dashboard_id, actions = await chat_agent.run_turn(
+    reply, new_messages, dashboard_id, actions, _ = await chat_agent.run_turn(
         db, provider, [], "añade un gauge de RPM", read_tools=[], current_dashboard_id=dashboard.id
     )
 
@@ -218,7 +218,7 @@ async def test_duplicate_create_dashboard_calls_in_one_turn_are_idempotent(db):
         ProviderResponse(text="Listo, he creado el dashboard.", tool_calls=[]),
     ])
 
-    reply, new_messages, dashboard_id, actions = await chat_agent.run_turn(
+    reply, new_messages, dashboard_id, actions, _ = await chat_agent.run_turn(
         db, provider, [], "crea un dashboard llamado pytest-dup-dashboard", read_tools=[]
     )
 
@@ -244,3 +244,65 @@ async def test_system_prompt_is_prepended_only_once(db):
     system_messages = [m for m in sent_messages if m.get("role") == "system"]
     assert len(system_messages) == 1
     assert system_messages[0] == sent_messages[0]
+
+
+@pytest.mark.asyncio
+async def test_present_signal_candidates_ends_the_turn_with_candidates_populated(db):
+    candidates = [
+        {"topic": "GALERNA/T01/GENERATOR", "signal_key": "Gen_RPM_Max", "signal_type": "kpi", "unit": "rpm", "description": "Peak RPM"},
+        {"topic": "GALERNA/T01/GENERATOR/_informative", "signal_key": "Gen_RPM_Max_Raw", "signal_type": "raw", "unit": "rpm", "description": None},
+    ]
+    provider = _ScriptedProvider([
+        ProviderResponse(text=None, tool_calls=[ToolCall(id="1", name="present_signal_candidates", arguments={"candidates": candidates})]),
+    ])
+
+    reply, new_messages, dashboard_id, actions, returned_candidates = await chat_agent.run_turn(
+        db, provider, [], "busca el rpm del generador", read_tools=[]
+    )
+
+    assert returned_candidates == candidates
+    assert actions == []  # presenting candidates is not a write action
+    assert len(provider.calls) == 1  # the turn ended immediately, no further loop iteration
+    tool_result_messages = [m for m in new_messages if m.get("role") == "tool"]
+    assert len(tool_result_messages) == 1
+
+
+@pytest.mark.asyncio
+async def test_present_signal_candidates_with_empty_list_is_rejected_as_a_tool_error(db):
+    provider = _ScriptedProvider([
+        ProviderResponse(text=None, tool_calls=[ToolCall(id="1", name="present_signal_candidates", arguments={"candidates": []})]),
+        ProviderResponse(text="Perdona, no encontré nada. ¿Puedes darme más detalles?", tool_calls=[]),
+    ])
+
+    reply, new_messages, dashboard_id, actions, returned_candidates = await chat_agent.run_turn(
+        db, provider, [], "busca algo", read_tools=[]
+    )
+
+    assert returned_candidates is None  # rejected, never surfaced to the user
+    assert len(provider.calls) == 2  # the loop continued after the rejection
+    tool_result_messages = [m for m in new_messages if m.get("role") == "tool"]
+    assert "empty" in tool_result_messages[0]["content"].lower() or "error" in tool_result_messages[0]["content"].lower()
+
+
+@pytest.mark.asyncio
+async def test_present_signal_candidates_is_truncated_to_a_maximum_of_8(db):
+    many_candidates = [
+        {"topic": f"GALERNA/T0{i}/GENERATOR", "signal_key": f"Gen_RPM_{i}", "signal_type": "kpi", "unit": "rpm", "description": None}
+        for i in range(12)
+    ]
+    provider = _ScriptedProvider([
+        ProviderResponse(text=None, tool_calls=[ToolCall(id="1", name="present_signal_candidates", arguments={"candidates": many_candidates})]),
+    ])
+
+    _, _, _, _, returned_candidates = await chat_agent.run_turn(db, provider, [], "busca algo", read_tools=[])
+
+    assert len(returned_candidates) == 8
+
+
+@pytest.mark.asyncio
+async def test_normal_write_tool_turn_returns_none_candidates(db):
+    provider = _ScriptedProvider([ProviderResponse(text="Hola", tool_calls=[])])
+
+    _, _, _, _, returned_candidates = await chat_agent.run_turn(db, provider, [], "hola", read_tools=[])
+
+    assert returned_candidates is None

@@ -106,6 +106,44 @@ _WRITE_TOOLS = [
 
 _WRITE_TOOL_NAMES = {t["function"]["name"] for t in _WRITE_TOOLS}
 
+_PRESENT_CANDIDATES_TOOL_NAME = "present_signal_candidates"
+
+_PRESENT_CANDIDATES_TOOL = {
+    "type": "function",
+    "function": {
+        "name": _PRESENT_CANDIDATES_TOOL_NAME,
+        "description": (
+            "Call this INSTEAD of guessing when search_signals returned 2+ plausible "
+            "matches, or you are not confident which single one the user means. Do NOT "
+            "call this for a single unambiguous match -- just use that signal directly. "
+            "The candidates are shown to the user as clickable options; you do not need "
+            "to also ask a follow-up question in your reply text."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "candidates": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "topic": {"type": "string"},
+                            "signal_key": {"type": "string"},
+                            "signal_type": {"type": "string"},
+                            "unit": {"type": "string"},
+                            "description": {"type": "string"},
+                        },
+                        "required": ["topic", "signal_key"],
+                    },
+                },
+            },
+            "required": ["candidates"],
+        },
+    },
+}
+
+_MAX_PRESENTED_CANDIDATES = 8
+
 # The primary key each write tool already consumes separately (as the target
 # id, e.g. `db.get(Dashboard, args["dashboard_id"])`) before any remaining
 # arguments are forwarded to chart_service/dashboard_service. Used by
@@ -122,26 +160,30 @@ _PRIMARY_KEY_BY_TOOL = {
 
 _SYSTEM_PROMPT = (
     "You are a helpful assistant that builds SCADA dashboards for an industrial monitoring system. "
-    "Use list_signals to discover what signals exist before referencing one -- never guess a signal_key. "
+    "Use list_signals to discover what signals exist under a KNOWN asset path before referencing "
+    "one -- never guess a signal_key. "
     "IMPORTANT: list_signals' `topic_prefix` argument filters by MQTT TOPIC PATH -- the asset hierarchy, "
     "like 'site/line/machine' -- and NOT by signal name. Never pass a signal name, a signal_key, or a "
-    "description as topic_prefix. To find a signal by name, call list_signals with the broadest topic "
-    "prefix you actually know (an empty string \"\" lists everything), then search the returned "
-    "signal_key/description fields yourself. An empty list_signals result only means nothing matched "
-    "THAT TOPIC PATH -- it never proves a named signal does not exist, so never tell the user a signal "
-    "is missing on the strength of one narrow list_signals call. "
-    "CRITICAL: if your FIRST list_signals call (with any specific topic_prefix guess) returns an empty "
-    "result, you MUST immediately call list_signals again with topic_prefix=\"\" in the SAME turn before "
-    "saying anything to the user -- do not try a second or third narrow guess, and do not conclude a "
-    "signal is missing after only narrow attempts. Only after a topic_prefix=\"\" call also fails to "
-    "surface anything plausible should you tell the user you couldn't find it. "
+    "description as topic_prefix. "
+    "If you are searching by NAME or KEYWORD instead of a known asset path (e.g. the user said "
+    "'generator rpm' or 'motor speed'), use search_signals(query) instead of list_signals -- it "
+    "matches signal_key/description/topic as substrings, case-insensitively, regardless of where in "
+    "the path the word appears. Pass a few keywords, not a full sentence. "
+    "If search_signals (or list_signals) returns 2+ plausible matches, or you are not confident which "
+    "one the user means, call present_signal_candidates with those matches instead of guessing or "
+    "asking a free-text clarifying question -- the user will pick one directly. Only call it with a "
+    "non-empty list. Do not call it for a single unambiguous match; just use that signal directly. "
+    "An empty result from either search tool only means nothing matched THAT query -- it never proves "
+    "a named signal does not exist, so never tell the user a signal is missing on the strength of one "
+    "narrow attempt; try search_signals with a broader or different keyword before giving up. "
     "Use get_current_value or get_historical_trend to check real data when useful. "
     "Use the write tools to create and edit the dashboard the user is describing. "
     "Always create a dashboard before adding charts to it if the conversation has not created one yet. "
     "Never call publish_dashboard unless the user explicitly asks to publish. "
     "Never claim you have created or modified anything unless a tool call actually returned a result -- "
     "if you intend to call a tool, emit a real tool call, never a description of one in your reply text. "
-    "If the request is ambiguous, ask a clarifying question in plain text instead of guessing."
+    "If the request is ambiguous in a way present_signal_candidates can't resolve (e.g. which dashboard, "
+    "not which signal), ask a clarifying question in plain text instead of guessing."
 )
 
 
@@ -166,10 +208,10 @@ async def run_turn(
     user_message: str,
     read_tools: list[dict] | None = None,
     current_dashboard_id: str | None = None,
-) -> tuple[str, list[dict], str | None, list[str]]:
+) -> tuple[str, list[dict], str | None, list[str], list[dict] | None]:
     if read_tools is None:
         read_tools = await mcp_client.list_read_tools()
-    tools = _WRITE_TOOLS + read_tools
+    tools = _WRITE_TOOLS + [_PRESENT_CANDIDATES_TOOL] + read_tools
 
     messages = list(history)
     if not any(m.get("role") == "system" for m in messages):
@@ -190,7 +232,7 @@ async def run_turn(
             assistant_message = {"role": "assistant", "content": response.text or ""}
             messages.append(assistant_message)
             new_messages.append(assistant_message)
-            return response.text or "", new_messages, dashboard_id, actions
+            return response.text or "", new_messages, dashboard_id, actions, None
 
         assistant_message = {
             "role": "assistant",
@@ -208,6 +250,25 @@ async def run_turn(
         new_messages.append(assistant_message)
 
         for tc in response.tool_calls:
+            if tc.name == _PRESENT_CANDIDATES_TOOL_NAME:
+                candidates = tc.arguments.get("candidates") or []
+                if not candidates:
+                    result = {"error": "candidates must not be an empty list -- either present at least one, or answer directly without calling this tool"}
+                    tool_message = {"role": "tool", "tool_call_id": tc.id, "content": json.dumps(result, default=str)}
+                    messages.append(tool_message)
+                    new_messages.append(tool_message)
+                    continue  # rejected -- let the model try again within this same turn
+
+                candidates = candidates[:_MAX_PRESENTED_CANDIDATES]
+                result = {"presented": True, "count": len(candidates)}
+                tool_message = {"role": "tool", "tool_call_id": tc.id, "content": json.dumps(result, default=str)}
+                messages.append(tool_message)
+                new_messages.append(tool_message)
+                reply_text = response.text or "Aquí tienes varias opciones, elige la que buscas:"
+                assistant_reply_message = {"role": "assistant", "content": reply_text}
+                new_messages.append(assistant_reply_message)
+                return reply_text, new_messages, dashboard_id, actions, candidates
+
             try:
                 if tc.name in _WRITE_TOOL_NAMES:
                     result = await _dispatch_write_tool(db, tc.name, tc.arguments, created_dashboards_this_turn)
@@ -230,7 +291,7 @@ async def run_turn(
 
     timeout_reply = "No pude completar la solicitud en el número de pasos permitido. ¿Puedes reformularla de forma más sencilla?"
     new_messages.append({"role": "assistant", "content": timeout_reply})
-    return timeout_reply, new_messages, dashboard_id, actions
+    return timeout_reply, new_messages, dashboard_id, actions, None
 
 
 def _allowed_write_args(tool_name: str) -> dict:
